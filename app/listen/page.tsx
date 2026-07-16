@@ -54,14 +54,22 @@ function ListenPageContent() {
       const found = vorlagen.find((v) => v.id === paramVorlagenId);
       if (found) {
         setAktiveVorlage(found);
-        setFilter(found.filterOptionen);
-        
-        const pool = kinderFiltern(allKinder, found.filterOptionen);
-        setGefiltertePool(pool);
-        setPhase('auswahl'); // Jump directly to Phase 2 (Manual selection)
-        
         setLoadedFromParam(true);
-        showToast(`Vorlage '${found.name}' geladen.`, 'success');
+        
+        if (found.istStatisch) {
+          // Static list flow: load members directly and skip to Phase 2 (selection)
+          const pool = allKinder.filter((k) => found.kinderIds?.includes(k.id));
+          setGefiltertePool(pool);
+          setPhase('auswahl');
+        } else if (found.filterOptionen) {
+          // Dynamic template flow
+          setFilter(found.filterOptionen);
+          const pool = kinderFiltern(allKinder, found.filterOptionen);
+          setGefiltertePool(pool);
+          setPhase('auswahl');
+        }
+        
+        showToast(`Liste '${found.name}' geladen.`, 'success');
       }
     }
   }, [paramVorlagenId, vorlagen, allKinder, loadedFromParam, showToast]);
@@ -84,16 +92,24 @@ function ListenPageContent() {
   // 3. Select a saved template from selector bar
   const handleSelectVorlage = (v: Listenvorlage | null) => {
     setAktiveVorlage(v);
-    setPhase('filter');
     setGenerierteKinder([]);
     setManuellGewaehltIds([]);
     
     if (v) {
-      // Prefill filter state from template
-      setFilter(v.filterOptionen);
+      if (v.istStatisch) {
+        // Static list flow: load members directly and skip to Phase 2
+        const pool = allKinder.filter((k) => v.kinderIds?.includes(k.id));
+        setGefiltertePool(pool);
+        setPhase('auswahl');
+      } else if (v.filterOptionen) {
+        // Dynamic template flow
+        setFilter(v.filterOptionen);
+        setPhase('filter');
+      }
       showToast(`Vorlage '${v.name}' geladen.`, 'success');
     } else {
       // Reset filter state to default
+      setPhase('filter');
       setFilter({
         alterVon: undefined,
         alterBis: undefined,
@@ -128,6 +144,7 @@ function ListenPageContent() {
           name,
           beschreibung,
           filterOptionen: filter,
+          istStatisch: false,
           erstelltAm: new Date().toISOString(),
           geaendertAm: new Date().toISOString()
         };
@@ -193,6 +210,7 @@ function ListenPageContent() {
     });
   };
 
+  // 8. Phase 2 Completion: Apply selection and fill the rest per rotation
   const handleProceedToResult = async (onlyManual: boolean) => {
     const freshKids = await db.kinder.toArray();
     // Restrict the selection pool to exactly the children that were filtered and visible in Phase 2
@@ -206,9 +224,14 @@ function ListenPageContent() {
       ? await letzteAktivitaetProKindFuerVorlage(aktiveVorlage.id) 
       : undefined;
 
-    if (onlyManual) {
-      // Use exactly the manually clicked items
-      finalSelection = activeFilterPool.filter((k) => manuellGewaehltIds.includes(k.id));
+    if (onlyManual || aktiveVorlage?.istStatisch || filter.anzahl === undefined) {
+      if (manuellGewaehltIds.length > 0) {
+        // Use exactly the manually clicked items
+        finalSelection = activeFilterPool.filter((k) => manuellGewaehltIds.includes(k.id));
+      } else {
+        // Fallback: Use all kids in this static pool (e.g. for printing a checklist)
+        finalSelection = [...activeFilterPool];
+      }
     } else {
       // Standard selection: Pinned kids + rest filled by rotation/random
       finalSelection = kinderAuswaehlen(
@@ -224,7 +247,7 @@ function ListenPageContent() {
     const filterTeile: string[] = [];
     
     if (aktiveVorlage) {
-      filterTeile.push(`Vorlage: ${aktiveVorlage.name}`);
+      filterTeile.push(aktiveVorlage.istStatisch ? `Feste Liste: ${aktiveVorlage.name}` : `Vorlage: ${aktiveVorlage.name}`);
     } else {
       filterTeile.push('Einmal-Liste');
     }

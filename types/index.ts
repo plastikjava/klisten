@@ -20,7 +20,9 @@ export interface Listenvorlage {
   id: string; // UUID
   name: string; // z.B. "Vorlese-Oma"
   beschreibung?: string; // optionale Beschreibung
-  filterOptionen: FilterOptionen; // gespeicherte Filtereinstellungen
+  filterOptionen?: FilterOptionen; // gespeicherte Filtereinstellungen, optional für statische Listen
+  istStatisch: boolean; // true = Feste Gruppenliste, false = Filter-Vorlage
+  kinderIds?: string[]; // IDs der Kinder in der statischen Liste
   erstelltAm: string; // ISO-Datum YYYY-MM-DDTHH:mm:ss.sssZ
   zuletztVerwendetAm?: string; // ISO-Datum YYYY-MM-DD
   geaendertAm: string; // ISO-Datum der letzten Änderung, für P2P-Sync

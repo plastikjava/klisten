@@ -358,20 +358,24 @@ export async function datenImportieren(jsonString: string): Promise<void> {
     const importVorlagen: Listenvorlage[] = [];
     if (backup.version >= 2 && Array.isArray(backup.vorlagen)) {
       for (const item of backup.vorlagen) {
-        if (!item.id || !item.name || !item.filterOptionen) {
+        if (!item.id || !item.name) {
           throw new Error('Ungültiges Backup-Format. Ein oder mehrere Einträge enthalten unvollständige Vorlagendaten.');
         }
+        const filterOpt = item.filterOptionen ? {
+          alterVon: item.filterOptionen.alterVon,
+          alterBis: item.filterOptionen.alterBis,
+          gruppen: Array.isArray(item.filterOptionen.gruppen) ? item.filterOptionen.gruppen : [],
+          anzahl: item.filterOptionen.anzahl,
+          zufallsauswahl: !!item.filterOptionen.zufallsauswahl
+        } : undefined;
+
         importVorlagen.push({
           id: item.id,
           name: item.name,
           beschreibung: item.beschreibung || undefined,
-          filterOptionen: {
-            alterVon: item.filterOptionen.alterVon,
-            alterBis: item.filterOptionen.alterBis,
-            gruppen: Array.isArray(item.filterOptionen.gruppen) ? item.filterOptionen.gruppen : [],
-            anzahl: item.filterOptionen.anzahl,
-            zufallsauswahl: !!item.filterOptionen.zufallsauswahl
-          },
+          filterOptionen: filterOpt,
+          istStatisch: !!item.istStatisch,
+          kinderIds: Array.isArray(item.kinderIds) ? item.kinderIds : undefined,
           erstelltAm: item.erstelltAm,
           zuletztVerwendetAm: item.zuletztVerwendetAm || undefined,
           geaendertAm: item.geaendertAm || new Date().toISOString()
