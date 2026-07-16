@@ -151,8 +151,8 @@ export default function FilterPanel({ gruppen, filter, setFilter, onGenerate, ha
             aria-checked={filter.zufallsauswahl}
           >
             <span
-              className={`w-6 h-6 rounded-full bg-white absolute top-1 transition-transform shadow-sm ${
-                filter.zufallsauswahl ? 'translate-x-7' : 'translate-x-1'
+              className={`w-6 h-6 rounded-full bg-white absolute top-1 transition-all shadow-sm ${
+                filter.zufallsauswahl ? 'left-7' : 'left-1'
               }`}
             />
           </button>
