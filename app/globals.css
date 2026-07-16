@@ -1,0 +1,85 @@
+@import "tailwindcss";
+
+:root {
+  --background: #FAFAF5; /* Warm white */
+  --foreground: #1E293B; /* Slate 800 */
+  --primary: #4A90D9;    /* Soft blue */
+}
+
+@theme {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Custom classes for Kita-Listen */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #4A90D9;
+  color: #ffffff;
+  font-weight: 600;
+  border-radius: 0.75rem;
+  transition: all 0.2s ease-in-out;
+  cursor: pointer;
+}
+
+.btn-primary:hover {
+  background-color: #357ABD;
+}
+
+.btn-primary:active {
+  background-color: #2A629A;
+  transform: scale(0.98);
+}
+
+/* Media query for print view */
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-size: 11pt !important;
+  }
+  
+  /* Hide all UI elements */
+  .no-print {
+    display: none !important;
+  }
+  
+  /* Make sure print container takes full width */
+  .print-container {
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    display: block !important;
+  }
+  
+  /* Ensure page breaks are handled nicely */
+  tr {
+    page-break-inside: avoid !important;
+  }
+  
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    margin-top: 20px !important;
+  }
+  
+  th, td {
+    border: 1px solid #cbd5e1 !important;
+    padding: 8px !important;
+    text-align: left !important;
+  }
+  
+  th {
+    background-color: #f1f5f9 !important;
+    color: #0f172a !important;
+    font-weight: bold !important;
+  }
+}
