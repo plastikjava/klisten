@@ -48,7 +48,7 @@ export default function KinderPage() {
     setIsDeleteOpen(true);
   };
 
-  const handleSaveKind = async (kindData: Omit<Kind, 'id'>) => {
+  const handleSaveKind = async (kindData: Omit<Kind, 'id' | 'geaendertAm'>) => {
     try {
       if (selectedKind) {
         // Edit mode

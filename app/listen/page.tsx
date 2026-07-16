@@ -128,7 +128,8 @@ function ListenPageContent() {
           name,
           beschreibung,
           filterOptionen: filter,
-          erstelltAm: new Date().toISOString()
+          erstelltAm: new Date().toISOString(),
+          geaendertAm: new Date().toISOString()
         };
         await vorlageSpeichern(neu);
         setAktiveVorlage(neu);

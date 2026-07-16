@@ -17,7 +17,7 @@ export async function alleKinderLaden(): Promise<Kind[]> {
  * Adds a new child to the IndexedDB.
  * Generates a UUID for the id.
  */
-export async function kindHinzufuegen(kind: Omit<Kind, 'id'>): Promise<string> {
+export async function kindHinzufuegen(kind: Omit<Kind, 'id' | 'geaendertAm'>): Promise<string> {
   try {
     const id = typeof crypto !== 'undefined' && crypto.randomUUID
       ? crypto.randomUUID()
@@ -25,7 +25,8 @@ export async function kindHinzufuegen(kind: Omit<Kind, 'id'>): Promise<string> {
     
     const neuesKind: Kind = {
       ...kind,
-      id
+      id,
+      geaendertAm: new Date().toISOString()
     };
     
     await db.kinder.add(neuesKind);
@@ -41,7 +42,10 @@ export async function kindHinzufuegen(kind: Omit<Kind, 'id'>): Promise<string> {
  */
 export async function kindAktualisieren(id: string, daten: Partial<Kind>): Promise<void> {
   try {
-    await db.kinder.update(id, daten);
+    await db.kinder.update(id, {
+      ...daten,
+      geaendertAm: new Date().toISOString()
+    });
   } catch (error) {
     console.error('Fehler beim Aktualisieren des Kindes:', error);
     throw new Error('Die Änderungen konnten nicht in der Datenbank gespeichert werden.');
@@ -81,9 +85,13 @@ export async function gruppenLaden(): Promise<string[]> {
 export async function aktivitaetenMarkieren(ids: string[]): Promise<void> {
   try {
     const heute = new Date().toISOString().split('T')[0];
+    const jetzt = new Date().toISOString();
     await db.transaction('rw', db.kinder, async () => {
       for (const id of ids) {
-        await db.kinder.update(id, { letzteAktivitaetAm: heute });
+        await db.kinder.update(id, { 
+          letzteAktivitaetAm: heute,
+          geaendertAm: jetzt
+        });
       }
     });
   } catch (error) {
@@ -109,7 +117,10 @@ export async function alleVorlagenLaden(): Promise<Listenvorlage[]> {
  */
 export async function vorlageSpeichern(vorlage: Listenvorlage): Promise<void> {
   try {
-    await db.vorlagen.put(vorlage);
+    await db.vorlagen.put({
+      ...vorlage,
+      geaendertAm: new Date().toISOString()
+    });
   } catch (error) {
     console.error('Fehler beim Speichern der Vorlage:', error);
     throw new Error('Die Vorlage konnte nicht gespeichert werden.');
@@ -138,6 +149,7 @@ export async function vorlageLoeschen(id: string): Promise<void> {
 export async function aktivitaetFuerVorlageMarkieren(vorlagenId: string, kindIds: string[]): Promise<void> {
   try {
     const heute = new Date().toISOString().split('T')[0];
+    const jetzt = new Date().toISOString();
     await db.transaction('rw', [db.aktivitaetsLog, db.vorlagen], async () => {
       // 1. Add log records
       for (const kindId of kindIds) {
@@ -149,13 +161,17 @@ export async function aktivitaetFuerVorlageMarkieren(vorlagenId: string, kindIds
           id: logId,
           vorlagenId,
           kindId,
-          datum: heute
+          datum: heute,
+          geaendertAm: jetzt
         };
         await db.aktivitaetsLog.add(log);
       }
       
       // 2. Update last used date on the template
-      await db.vorlagen.update(vorlagenId, { zuletztVerwendetAm: heute });
+      await db.vorlagen.update(vorlagenId, { 
+        zuletztVerwendetAm: heute,
+        geaendertAm: jetzt
+      });
     });
   } catch (error) {
     console.error('Fehler beim Markieren der Aktivität für die Vorlage:', error);
@@ -210,6 +226,84 @@ export async function letzteAktivitaetProKindFuerAlleVorlagen(): Promise<Map<str
 }
 
 /**
+ * Intelligently merges datasets from another device (P2P synchronization).
+ * Compares change timestamps to resolve updates. Keeps newer items.
+ */
+export async function datenZusammenfuehren(
+  importKinder: Kind[],
+  importVorlagen: Listenvorlage[],
+  importLogs: AktivitaetsLog[]
+): Promise<void> {
+  try {
+    await db.transaction('rw', [db.kinder, db.vorlagen, db.aktivitaetsLog], async () => {
+      // 1. Merge Kinder
+      const localKinder = await db.kinder.toArray();
+      const localKinderMap = new Map(localKinder.map(k => [k.id, k]));
+      
+      for (const impKind of importKinder) {
+        const local = localKinderMap.get(impKind.id);
+        if (!local) {
+          await db.kinder.add(impKind);
+        } else if (impKind.geaendertAm > local.geaendertAm) {
+          await db.kinder.put(impKind);
+        }
+      }
+
+      // 2. Merge Vorlagen
+      const localVorlagen = await db.vorlagen.toArray();
+      const localVorlagenMap = new Map(localVorlagen.map(v => [v.id, v]));
+
+      for (const impVorlage of importVorlagen) {
+        const local = localVorlagenMap.get(impVorlage.id);
+        if (!local) {
+          await db.vorlagen.add(impVorlage);
+        } else if (impVorlage.geaendertAm > local.geaendertAm) {
+          await db.vorlagen.put(impVorlage);
+        }
+      }
+
+      // 3. Merge Logs (logs are unique and additive)
+      const localLogs = await db.aktivitaetsLog.toArray();
+      const localLogsKeys = new Set(localLogs.map(l => l.id));
+
+      for (const impLog of importLogs) {
+        if (!localLogsKeys.has(impLog.id)) {
+          await db.aktivitaetsLog.add(impLog);
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Fehler beim Zusammenführen der Daten:', error);
+    throw new Error('Fehler beim Zusammenführen der Daten.');
+  }
+}
+
+/**
+ * Overwrites all local tables with the provided state.
+ * Important for spiegeling deletions.
+ */
+export async function datenUeberschreiben(
+  importKinder: Kind[],
+  importVorlagen: Listenvorlage[],
+  importLogs: AktivitaetsLog[]
+): Promise<void> {
+  try {
+    await db.transaction('rw', [db.kinder, db.vorlagen, db.aktivitaetsLog], async () => {
+      await db.kinder.clear();
+      await db.vorlagen.clear();
+      await db.aktivitaetsLog.clear();
+
+      if (importKinder.length > 0) await db.kinder.bulkAdd(importKinder);
+      if (importVorlagen.length > 0) await db.vorlagen.bulkAdd(importVorlagen);
+      if (importLogs.length > 0) await db.aktivitaetsLog.bulkAdd(importLogs);
+    });
+  } catch (error) {
+    console.error('Fehler beim Überschreiben der lokalen Daten:', error);
+    throw new Error('Fehler beim Überschreiben der lokalen Daten.');
+  }
+}
+
+/**
  * Exports all database records (kinder, vorlagen, logs) to a JSON string.
  */
 export async function datenExportieren(): Promise<string> {
@@ -256,7 +350,8 @@ export async function datenImportieren(jsonString: string): Promise<void> {
         geburtsdatum: item.geburtsdatum,
         gruppe: item.gruppe,
         letzteAktivitaetAm: item.letzteAktivitaetAm || undefined,
-        besonderheiten: item.besonderheiten || undefined
+        besonderheiten: item.besonderheiten || undefined,
+        geaendertAm: item.geaendertAm || new Date().toISOString()
       });
     }
 
@@ -278,7 +373,8 @@ export async function datenImportieren(jsonString: string): Promise<void> {
             zufallsauswahl: !!item.filterOptionen.zufallsauswahl
           },
           erstelltAm: item.erstelltAm,
-          zuletztVerwendetAm: item.zuletztVerwendetAm || undefined
+          zuletztVerwendetAm: item.zuletztVerwendetAm || undefined,
+          geaendertAm: item.geaendertAm || new Date().toISOString()
         });
       }
     }
@@ -293,7 +389,8 @@ export async function datenImportieren(jsonString: string): Promise<void> {
           id: item.id,
           vorlagenId: item.vorlagenId,
           kindId: item.kindId,
-          datum: item.datum
+          datum: item.datum,
+          geaendertAm: item.geaendertAm || new Date().toISOString()
         });
       }
     }

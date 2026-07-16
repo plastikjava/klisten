@@ -6,7 +6,7 @@ import { Kind } from '@/types';
 interface KindFormularProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (kind: Omit<Kind, 'id'>) => void;
+  onSave: (kind: Omit<Kind, 'id' | 'geaendertAm'>) => void;
   kind?: Kind; // Present only if editing
   gruppen: string[]; // List of existing group names
 }
