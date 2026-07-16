@@ -43,6 +43,77 @@ export default function FilterPanel({ gruppen, filter, setFilter, onGenerate, ha
     setFilter((prev) => ({ ...prev, zufallsauswahl: !prev.zufallsauswahl }));
   };
 
+
+
+  const handleAlterVonDec = () => {
+    setFilter((prev) => {
+      if (prev.alterVon === undefined) return prev;
+      if (prev.alterVon === 3) {
+        return { ...prev, alterVon: undefined };
+      }
+      return { ...prev, alterVon: prev.alterVon - 1 };
+    });
+  };
+
+  const handleAlterVonInc = () => {
+    setFilter((prev) => {
+      if (prev.alterVon === undefined) {
+        return { ...prev, alterVon: 3 };
+      }
+      if (prev.alterVon >= 7) return prev;
+      
+      const nextVal = prev.alterVon + 1;
+      if (prev.alterBis !== undefined && nextVal > prev.alterBis) {
+        return prev;
+      }
+      return { ...prev, alterVon: nextVal };
+    });
+  };
+
+  const handleAlterBisDec = () => {
+    setFilter((prev) => {
+      if (prev.alterBis === undefined) {
+        return { ...prev, alterBis: 7 };
+      }
+      if (prev.alterBis <= 3) return prev;
+      
+      const nextVal = prev.alterBis - 1;
+      if (prev.alterVon !== undefined && nextVal < prev.alterVon) {
+        return prev;
+      }
+      return { ...prev, alterBis: nextVal };
+    });
+  };
+
+  const handleAlterBisInc = () => {
+    setFilter((prev) => {
+      if (prev.alterBis === undefined) return prev;
+      if (prev.alterBis >= 7) {
+        return { ...prev, alterBis: undefined };
+      }
+      return { ...prev, alterBis: prev.alterBis + 1 };
+    });
+  };
+
+  const handleAnzahlDec = () => {
+    setFilter((prev) => {
+      if (prev.anzahl === undefined) return prev;
+      if (prev.anzahl <= 1) {
+        return { ...prev, anzahl: undefined };
+      }
+      return { ...prev, anzahl: prev.anzahl - 1 };
+    });
+  };
+
+  const handleAnzahlInc = () => {
+    setFilter((prev) => {
+      if (prev.anzahl === undefined) {
+        return { ...prev, anzahl: 6 };
+      }
+      return { ...prev, anzahl: prev.anzahl + 1 };
+    });
+  };
+
   return (
     <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm space-y-6 select-none">
       
@@ -83,37 +154,62 @@ export default function FilterPanel({ gruppen, filter, setFilter, onGenerate, ha
         )}
       </div>
 
-      {/* Age Span Input */}
+      {/* Age Span Input (Stepper) */}
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-1.5">
-          <label htmlFor="alterVon" className="block text-sm font-bold text-slate-700">
-            Alter von (Jahre)
+          <label className="block text-sm font-bold text-slate-700">
+            Alter von
           </label>
-          <input
-            type="number"
-            id="alterVon"
-            min="0"
-            max="18"
-            value={filter.alterVon !== undefined ? filter.alterVon : ''}
-            onChange={handleAlterVonChange}
-            placeholder="beliebig"
-            className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-[#4A90D9]/50 transition"
-          />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleAlterVonDec}
+              disabled={filter.alterVon === undefined}
+              className="w-11 h-11 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xl flex items-center justify-center transition disabled:opacity-40 disabled:hover:bg-slate-100 focus:outline-none"
+              title="Verringern (oder zurück auf beliebig)"
+            >
+              -
+            </button>
+            <div className="flex-1 bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-3 text-center font-bold text-slate-700 text-sm md:text-base">
+              {filter.alterVon !== undefined ? `${filter.alterVon} Jahre` : 'beliebig'}
+            </div>
+            <button
+              type="button"
+              onClick={handleAlterVonInc}
+              disabled={filter.alterVon !== undefined && filter.alterVon >= 7}
+              className="w-11 h-11 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xl flex items-center justify-center transition disabled:opacity-40 disabled:hover:bg-slate-100 focus:outline-none"
+            >
+              +
+            </button>
+          </div>
         </div>
+
         <div className="space-y-1.5">
-          <label htmlFor="alterBis" className="block text-sm font-bold text-slate-700">
-            Alter bis (Jahre)
+          <label className="block text-sm font-bold text-slate-700">
+            Alter bis
           </label>
-          <input
-            type="number"
-            id="alterBis"
-            min="0"
-            max="18"
-            value={filter.alterBis !== undefined ? filter.alterBis : ''}
-            onChange={handleAlterBisChange}
-            placeholder="beliebig"
-            className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-[#4A90D9]/50 transition"
-          />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleAlterBisDec}
+              disabled={filter.alterBis !== undefined && filter.alterBis <= 3}
+              className="w-11 h-11 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xl flex items-center justify-center transition disabled:opacity-40 disabled:hover:bg-slate-100 focus:outline-none"
+            >
+              -
+            </button>
+            <div className="flex-1 bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-3 text-center font-bold text-slate-700 text-sm md:text-base">
+              {filter.alterBis !== undefined ? `${filter.alterBis} Jahre` : 'beliebig'}
+            </div>
+            <button
+              type="button"
+              onClick={handleAlterBisInc}
+              disabled={filter.alterBis === undefined}
+              className="w-11 h-11 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xl flex items-center justify-center transition disabled:opacity-40 disabled:hover:bg-slate-100 focus:outline-none"
+              title="Erhöhen (oder zurück auf beliebig)"
+            >
+              +
+            </button>
+          </div>
         </div>
       </div>
 
@@ -122,18 +218,30 @@ export default function FilterPanel({ gruppen, filter, setFilter, onGenerate, ha
         
         {/* Count limit */}
         <div className="space-y-1.5">
-          <label htmlFor="anzahl" className="block text-sm font-bold text-slate-700">
+          <label className="block text-sm font-bold text-slate-700">
             Anzahl Kinder begrenzen auf
           </label>
-          <input
-            type="number"
-            id="anzahl"
-            min="1"
-            value={filter.anzahl !== undefined ? filter.anzahl : ''}
-            onChange={handleAnzahlChange}
-            placeholder="alle Treffer"
-            className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-[#4A90D9]/50 transition"
-          />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleAnzahlDec}
+              disabled={filter.anzahl === undefined}
+              className="w-11 h-11 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xl flex items-center justify-center transition disabled:opacity-40 disabled:hover:bg-slate-100 focus:outline-none"
+              title="Weniger Kinder (oder zurück auf alle)"
+            >
+              -
+            </button>
+            <div className="flex-1 bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-3 text-center font-bold text-slate-700 text-sm md:text-base">
+              {filter.anzahl !== undefined ? `${filter.anzahl} Kinder` : 'alle Treffer'}
+            </div>
+            <button
+              type="button"
+              onClick={handleAnzahlInc}
+              className="w-11 h-11 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xl flex items-center justify-center transition focus:outline-none"
+            >
+              +
+            </button>
+          </div>
         </div>
 
         {/* Random / Rotation Switch */}
