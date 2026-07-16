@@ -193,10 +193,11 @@ function ListenPageContent() {
     });
   };
 
-  // 8. Phase 2 Completion: Apply selection and fill the rest per rotation
   const handleProceedToResult = async (onlyManual: boolean) => {
     const freshKids = await db.kinder.toArray();
-    const activeFilterPool = kinderFiltern(freshKids, filter);
+    // Restrict the selection pool to exactly the children that were filtered and visible in Phase 2
+    const allowedIds = new Set(gefiltertePool.map((k) => k.id));
+    const activeFilterPool = freshKids.filter((k) => allowedIds.has(k.id));
 
     let finalSelection: Kind[] = [];
     
