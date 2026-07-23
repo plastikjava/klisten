@@ -170,7 +170,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     }
   }, [roomName, pushToCloud]);
 
-  // Auto-sync effect: pull on mount, tab focus, or room change with 4-second polling
+  // Auto-sync effect: battery-friendly smart sync (15s interval + instant pull on screen unlock/touch)
   useEffect(() => {
     if (!autoSync || !roomName.trim()) {
       setStatus('disconnected');
@@ -180,21 +180,28 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     // Pull immediately on startup
     pullFromCloud();
 
-    // Pull when user opens/unlocks the iPad screen (window focus / visibility)
-    const handleFocus = () => {
-      pullFromCloud();
+    let lastTouchPull = 0;
+    const handleInstantPull = () => {
+      const now = Date.now();
+      if (now - lastTouchPull > 8000) {
+        lastTouchPull = now;
+        pullFromCloud();
+      }
     };
-    window.addEventListener('focus', handleFocus);
-    window.addEventListener('visibilitychange', handleFocus);
 
-    // Fast periodic check every 4 seconds for near real-time sync across devices
+    window.addEventListener('focus', handleInstantPull);
+    window.addEventListener('visibilitychange', handleInstantPull);
+    window.addEventListener('pointerdown', handleInstantPull);
+
+    // Battery-friendly periodic check every 15 seconds
     const intervalId = setInterval(() => {
       pullFromCloud();
-    }, 4000);
+    }, 15000);
 
     return () => {
-      window.removeEventListener('focus', handleFocus);
-      window.removeEventListener('visibilitychange', handleFocus);
+      window.removeEventListener('focus', handleInstantPull);
+      window.removeEventListener('visibilitychange', handleInstantPull);
+      window.removeEventListener('pointerdown', handleInstantPull);
       clearInterval(intervalId);
     };
   }, [roomName, autoSync, pullFromCloud]);
