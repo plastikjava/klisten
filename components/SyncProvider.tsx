@@ -220,7 +220,8 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cleanup();
     };
-  }, [roomName, deviceRole, autoSync, connectP2P, cleanup]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomName, deviceRole, autoSync]);
 
   // Hook into Dexie DB changes to broadcast edits in real-time when connected
   useEffect(() => {
