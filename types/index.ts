@@ -6,6 +6,7 @@ export interface Kind {
   letzteAktivitaetAm?: string; // ISO-Datum YYYY-MM-DD, für Rotationslogik
   besonderheiten?: string; // optionales Freitextfeld (z.B. Allergien)
   geaendertAm: string; // ISO-Datum der letzten Änderung, für P2P-Sync
+  geloescht?: boolean; // Soft Delete Marker (Tombstone für P2P-Sync)
 }
 
 export interface FilterOptionen {
@@ -26,6 +27,7 @@ export interface Listenvorlage {
   erstelltAm: string; // ISO-Datum YYYY-MM-DDTHH:mm:ss.sssZ
   zuletztVerwendetAm?: string; // ISO-Datum YYYY-MM-DD
   geaendertAm: string; // ISO-Datum der letzten Änderung, für P2P-Sync
+  geloescht?: boolean; // Soft Delete Marker (Tombstone für P2P-Sync)
 }
 
 export interface AktivitaetsLog {

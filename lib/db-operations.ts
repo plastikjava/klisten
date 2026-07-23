@@ -2,11 +2,12 @@ import { db } from './db';
 import { Kind, Listenvorlage, AktivitaetsLog } from '@/types';
 
 /**
- * Loads all kids from the local IndexedDB.
+ * Loads all active (non-deleted) kids from the local IndexedDB.
  */
 export async function alleKinderLaden(): Promise<Kind[]> {
   try {
-    return await db.kinder.toArray();
+    const kinder = await db.kinder.toArray();
+    return kinder.filter((k) => !k.geloescht);
   } catch (error) {
     console.error('Fehler beim Laden der Kinder:', error);
     throw new Error('Die Kinderdaten konnten nicht aus der lokalen Datenbank geladen werden.');
@@ -26,6 +27,7 @@ export async function kindHinzufuegen(kind: Omit<Kind, 'id' | 'geaendertAm'>): P
     const neuesKind: Kind = {
       ...kind,
       id,
+      geloescht: false,
       geaendertAm: new Date().toISOString()
     };
     
@@ -53,11 +55,14 @@ export async function kindAktualisieren(id: string, daten: Partial<Kind>): Promi
 }
 
 /**
- * Deletes a child from the IndexedDB by id.
+ * Soft-deletes a child from the IndexedDB using a Tombstone record so deletions sync properly over P2P.
  */
 export async function kindLoeschen(id: string): Promise<void> {
   try {
-    await db.kinder.delete(id);
+    await db.kinder.update(id, {
+      geloescht: true,
+      geaendertAm: new Date().toISOString()
+    });
   } catch (error) {
     console.error('Fehler beim Löschen des Kindes:', error);
     throw new Error('Das Kind konnte nicht gelöscht werden.');
@@ -65,12 +70,17 @@ export async function kindLoeschen(id: string): Promise<void> {
 }
 
 /**
- * Loads all distinct group names currently used.
+ * Loads all distinct group names currently used by active children.
  */
 export async function gruppenLaden(): Promise<string[]> {
   try {
     const kinder = await db.kinder.toArray();
-    const gruppenSet = new Set(kinder.map(k => k.gruppe).filter(g => g && g.trim() !== ''));
+    const gruppenSet = new Set(
+      kinder
+        .filter((k) => !k.geloescht)
+        .map((k) => k.gruppe)
+        .filter((g) => g && g.trim() !== '')
+    );
     return Array.from(gruppenSet).sort();
   } catch (error) {
     console.error('Fehler beim Laden der Gruppen:', error);
@@ -101,11 +111,12 @@ export async function aktivitaetenMarkieren(ids: string[]): Promise<void> {
 }
 
 /**
- * Loads all saved templates.
+ * Loads all active (non-deleted) saved templates.
  */
 export async function alleVorlagenLaden(): Promise<Listenvorlage[]> {
   try {
-    return await db.vorlagen.toArray();
+    const vorlagen = await db.vorlagen.toArray();
+    return vorlagen.filter((v) => !v.geloescht);
   } catch (error) {
     console.error('Fehler beim Laden der Vorlagen:', error);
     throw new Error('Die Listenvorlagen konnten nicht geladen werden.');
@@ -119,6 +130,7 @@ export async function vorlageSpeichern(vorlage: Listenvorlage): Promise<void> {
   try {
     await db.vorlagen.put({
       ...vorlage,
+      geloescht: false,
       geaendertAm: new Date().toISOString()
     });
   } catch (error) {
@@ -128,12 +140,15 @@ export async function vorlageSpeichern(vorlage: Listenvorlage): Promise<void> {
 }
 
 /**
- * Deletes a template and all associated activity logs.
+ * Soft-deletes a template using a Tombstone record for P2P sync.
  */
 export async function vorlageLoeschen(id: string): Promise<void> {
   try {
     await db.transaction('rw', [db.vorlagen, db.aktivitaetsLog], async () => {
-      await db.vorlagen.delete(id);
+      await db.vorlagen.update(id, {
+        geloescht: true,
+        geaendertAm: new Date().toISOString()
+      });
       await db.aktivitaetsLog.where('vorlagenId').equals(id).delete();
     });
   } catch (error) {
@@ -144,14 +159,12 @@ export async function vorlageLoeschen(id: string): Promise<void> {
 
 /**
  * Marks a list of children as having participated in a template-specific activity today.
- * Inserts records into the `aktivitaetsLog` table and updates `zuletztVerwendetAm` in the template.
  */
 export async function aktivitaetFuerVorlageMarkieren(vorlagenId: string, kindIds: string[]): Promise<void> {
   try {
     const heute = new Date().toISOString().split('T')[0];
     const jetzt = new Date().toISOString();
     await db.transaction('rw', [db.aktivitaetsLog, db.vorlagen], async () => {
-      // 1. Add log records
       for (const kindId of kindIds) {
         const logId = typeof crypto !== 'undefined' && crypto.randomUUID
           ? crypto.randomUUID()
@@ -167,7 +180,6 @@ export async function aktivitaetFuerVorlageMarkieren(vorlagenId: string, kindIds
         await db.aktivitaetsLog.add(log);
       }
       
-      // 2. Update last used date on the template
       await db.vorlagen.update(vorlagenId, { 
         zuletztVerwendetAm: heute,
         geaendertAm: jetzt
@@ -181,7 +193,6 @@ export async function aktivitaetFuerVorlageMarkieren(vorlagenId: string, kindIds
 
 /**
  * Loads the last participation date for each child under a specific template.
- * Returns a Map of kindId -> date string (YYYY-MM-DD).
  */
 export async function letzteAktivitaetProKindFuerVorlage(vorlagenId: string): Promise<Map<string, string>> {
   try {
@@ -202,7 +213,6 @@ export async function letzteAktivitaetProKindFuerVorlage(vorlagenId: string): Pr
 
 /**
  * Loads the last participation date for each child across all templates.
- * Returns a Map where key is templateId, and value is a Map of kindId -> date string (YYYY-MM-DD).
  */
 export async function letzteAktivitaetProKindFuerAlleVorlagen(): Promise<Map<string, Map<string, string>>> {
   try {
@@ -227,7 +237,7 @@ export async function letzteAktivitaetProKindFuerAlleVorlagen(): Promise<Map<str
 
 /**
  * Intelligently merges datasets from another device (P2P synchronization).
- * Compares change timestamps to resolve updates. Keeps newer items.
+ * Compares change timestamps to resolve updates. Keeps newer items (including Tombstone deletes).
  */
 export async function datenZusammenfuehren(
   importKinder: Kind[],
@@ -242,10 +252,14 @@ export async function datenZusammenfuehren(
       
       for (const impKind of importKinder) {
         const local = localKinderMap.get(impKind.id);
+        const impTime = impKind.geaendertAm || '1970-01-01T00:00:00.000Z';
         if (!local) {
           await db.kinder.add(impKind);
-        } else if (impKind.geaendertAm > local.geaendertAm) {
-          await db.kinder.put(impKind);
+        } else {
+          const localTime = local.geaendertAm || '1970-01-01T00:00:00.000Z';
+          if (impTime > localTime) {
+            await db.kinder.put(impKind);
+          }
         }
       }
 
@@ -255,10 +269,14 @@ export async function datenZusammenfuehren(
 
       for (const impVorlage of importVorlagen) {
         const local = localVorlagenMap.get(impVorlage.id);
+        const impTime = impVorlage.geaendertAm || '1970-01-01T00:00:00.000Z';
         if (!local) {
           await db.vorlagen.add(impVorlage);
-        } else if (impVorlage.geaendertAm > local.geaendertAm) {
-          await db.vorlagen.put(impVorlage);
+        } else {
+          const localTime = local.geaendertAm || '1970-01-01T00:00:00.000Z';
+          if (impTime > localTime) {
+            await db.vorlagen.put(impVorlage);
+          }
         }
       }
 
@@ -280,7 +298,6 @@ export async function datenZusammenfuehren(
 
 /**
  * Overwrites all local tables with the provided state.
- * Important for spiegeling deletions.
  */
 export async function datenUeberschreiben(
   importKinder: Kind[],
@@ -328,13 +345,11 @@ export async function datenExportieren(): Promise<string> {
 
 /**
  * Imports a JSON backup, validates it, and overwrites the entire database.
- * Supports both version 1 (kids only) and version 2 (kids, templates, and logs).
  */
 export async function datenImportieren(jsonString: string): Promise<void> {
   try {
     const backup = JSON.parse(jsonString);
     
-    // Simple validation
     if (!backup || !Array.isArray(backup.kinder)) {
       throw new Error('Ungültiges Backup-Format. Keine Kinderdaten gefunden.');
     }
@@ -351,7 +366,8 @@ export async function datenImportieren(jsonString: string): Promise<void> {
         gruppe: item.gruppe,
         letzteAktivitaetAm: item.letzteAktivitaetAm || undefined,
         besonderheiten: item.besonderheiten || undefined,
-        geaendertAm: item.geaendertAm || new Date().toISOString()
+        geaendertAm: item.geaendertAm || new Date().toISOString(),
+        geloescht: !!item.geloescht
       });
     }
 
@@ -378,7 +394,8 @@ export async function datenImportieren(jsonString: string): Promise<void> {
           kinderIds: Array.isArray(item.kinderIds) ? item.kinderIds : undefined,
           erstelltAm: item.erstelltAm,
           zuletztVerwendetAm: item.zuletztVerwendetAm || undefined,
-          geaendertAm: item.geaendertAm || new Date().toISOString()
+          geaendertAm: item.geaendertAm || new Date().toISOString(),
+          geloescht: !!item.geloescht
         });
       }
     }
@@ -399,7 +416,6 @@ export async function datenImportieren(jsonString: string): Promise<void> {
       }
     }
     
-    // Clear and bulk insert within a single database transaction
     await db.transaction('rw', [db.kinder, db.vorlagen, db.aktivitaetsLog], async () => {
       await db.kinder.clear();
       await db.vorlagen.clear();

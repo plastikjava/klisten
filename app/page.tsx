@@ -7,13 +7,13 @@ import { db } from '@/lib/db';
 
 export default function Home() {
   // Query database to get live counts
-  const kinderAnzahl = useLiveQuery(() => db.kinder.count());
+  const kinderAnzahl = useLiveQuery(() => db.kinder.filter((k) => !k.geloescht).count());
   const gruppenAnzahl = useLiveQuery(async () => {
-    const kinder = await db.kinder.toArray();
+    const kinder = await db.kinder.filter((k) => !k.geloescht).toArray();
     const gruppenSet = new Set(kinder.map((k) => k.gruppe).filter(g => g && g.trim() !== ''));
     return gruppenSet.size;
   });
-  const vorlagenAnzahl = useLiveQuery(() => db.vorlagen.count());
+  const vorlagenAnzahl = useLiveQuery(() => db.vorlagen.filter((v) => !v.geloescht).count());
 
   return (
     <div className="space-y-10 py-4 animate-in fade-in duration-200">

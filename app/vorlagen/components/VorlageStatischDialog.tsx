@@ -19,7 +19,7 @@ export default function VorlageStatischDialog({
   onSave,
 }: VorlageStatischDialogProps) {
   // Live query all children
-  const allKinder = useLiveQuery(() => db.kinder.toArray()) || [];
+  const allKinder = useLiveQuery(() => db.kinder.filter((k) => !k.geloescht).toArray()) || [];
 
   const [name, setName] = useState('');
   const [beschreibung, setBeschreibung] = useState('');

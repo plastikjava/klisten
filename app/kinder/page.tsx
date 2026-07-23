@@ -28,7 +28,7 @@ export default function KinderPage() {
   const [selectedKind, setSelectedKind] = useState<Kind | undefined>(undefined);
 
   // Live Query from IndexedDB
-  const kinder = useLiveQuery(() => db.kinder.toArray()) || [];
+  const kinder = useLiveQuery(() => db.kinder.filter((k) => !k.geloescht).toArray()) || [];
   
   // Get active groups dynamically for the form dropdown
   const gruppen = useLiveQuery(() => gruppenLaden()) || [];

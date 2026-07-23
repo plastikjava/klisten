@@ -15,7 +15,7 @@ export default function VorlagenPage() {
   const { showToast } = useToast();
 
   // Queries saved templates from IndexedDB
-  const vorlagen = useLiveQuery(() => db.vorlagen.toArray()) || [];
+  const vorlagen = useLiveQuery(() => db.vorlagen.filter((v) => !v.geloescht).toArray()) || [];
 
   // Edit metadata modal states (Dynamic filter templates)
   const [selectedVorlage, setSelectedVorlage] = useState<Listenvorlage | null>(null);

@@ -30,9 +30,9 @@ function ListenPageContent() {
   const { showToast } = useToast();
 
   // 1. Live Queries from DB
-  const allKinder = useLiveQuery(() => db.kinder.toArray()) || [];
+  const allKinder = useLiveQuery(() => db.kinder.filter((k) => !k.geloescht).toArray()) || [];
   const gruppen = useLiveQuery(() => gruppenLaden()) || [];
-  const vorlagen = useLiveQuery(() => db.vorlagen.toArray()) || [];
+  const vorlagen = useLiveQuery(() => db.vorlagen.filter((v) => !v.geloescht).toArray()) || [];
   
   // Live map of activity logs: templateId -> Map<kindId, dateStr>
   const aktivitaetsLogMap = useLiveQuery(async () => {
