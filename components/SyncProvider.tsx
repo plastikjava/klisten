@@ -193,10 +193,10 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     window.addEventListener('visibilitychange', handleInstantPull);
     window.addEventListener('pointerdown', handleInstantPull);
 
-    // Battery-friendly periodic check every 15 seconds
+    // Battery-optimized periodic check every 5 minutes (300,000 ms)
     const intervalId = setInterval(() => {
       pullFromCloud();
-    }, 15000);
+    }, 300000);
 
     return () => {
       window.removeEventListener('focus', handleInstantPull);
