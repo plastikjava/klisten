@@ -331,13 +331,12 @@ export default function VorlageDruckenDialog({
             <tr className="bg-slate-100 border border-slate-800">
               <th className="border border-slate-700 py-1.5 px-2 text-center w-8 font-bold">#</th>
               <th className="border border-slate-700 py-1.5 px-2 text-left font-bold">Name</th>
-              <th className="border border-slate-700 py-1.5 px-2 text-left w-20 font-bold">Gruppe</th>
-              <th className="border border-slate-700 py-1.5 px-2 text-left w-20 font-bold">Alter</th>
-              <th className="border border-slate-700 py-1.5 px-2 text-left font-bold">Besonderheiten</th>
+              <th className="border border-slate-700 py-1.5 px-2 text-left w-24 font-bold">Gruppe</th>
+              <th className="border border-slate-700 py-1.5 px-2 text-left w-24 font-bold">Alter</th>
 
               {/* Dynamic Empty Columns */}
               {Array.from({ length: emptyColumnsCount }).map((_, idx) => (
-                <th key={idx} className="border border-slate-700 py-1.5 px-1 text-center font-bold min-w-[3.2rem]">
+                <th key={idx} className="border border-slate-700 py-1.5 px-1 text-center font-bold min-w-[3.5rem]">
                   {columnHeaders[idx]?.trim() ? columnHeaders[idx].trim() : '\u00A0'}
                 </th>
               ))}
@@ -357,9 +356,6 @@ export default function VorlageDruckenDialog({
                 </td>
                 <td className="border border-slate-700 py-1 px-2 text-left text-slate-800 whitespace-nowrap">
                   {formatierteAltersAngabe(kind.geburtsdatum)}
-                </td>
-                <td className="border border-slate-700 py-1 px-2 text-left text-slate-700 italic">
-                  {kind.besonderheiten || ''}
                 </td>
 
                 {/* Empty cells for handwriting / checkmarks */}

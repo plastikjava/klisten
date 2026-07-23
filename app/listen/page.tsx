@@ -9,12 +9,13 @@ import {
   gruppenLaden, 
   vorlageSpeichern, 
   vorlageLoeschen, 
-  letzteAktivitaetProKindFuerVorlage,
   letzteAktivitaetProKindFuerAlleVorlagen,
+  aktivitaetenMarkieren,
   aktivitaetFuerVorlageMarkieren,
-  aktivitaetenMarkieren
+  kindAktualisieren
 } from '@/lib/db-operations';
 import { kinderFiltern, kinderAuswaehlen } from '@/lib/listengenerator';
+import { formatierteAltersAngabe } from '@/lib/alter';
 import { useToast } from '@/components/Toast';
 
 import FilterPanel from './components/FilterPanel';
@@ -23,8 +24,9 @@ import DruckAnsicht from './components/DruckAnsicht';
 import VorlagenLeiste from './components/VorlagenLeiste';
 import VorlageSpeichernDialog from './components/VorlageSpeichernDialog';
 import KinderAuswahlTabelle from './components/KinderAuswahlTabelle';
+import KindFormular from '@/app/kinder/components/KindFormular';
 
-type Phase = 'filter' | 'auswahl' | 'ergebnis';
+type Phase = 'statisch_mitglieder' | 'filter' | 'auswahl' | 'ergebnis';
 
 function ListenPageContent() {
   const { showToast } = useToast();
@@ -44,6 +46,10 @@ function ListenPageContent() {
   const [aktiveVorlage, setAktiveVorlage] = useState<Listenvorlage | null>(null);
   const [isSaveDialogOpen, setIsSaveDialogOpen] = useState(false);
 
+  // Edit kid modal state inside static list view
+  const [editingKind, setEditingKind] = useState<Kind | undefined>(undefined);
+  const [isEditKindOpen, setIsEditKindOpen] = useState(false);
+
   // URL param loader state
   const searchParams = useSearchParams();
   const paramVorlagenId = searchParams.get('vorlagenId');
@@ -57,10 +63,10 @@ function ListenPageContent() {
         setLoadedFromParam(true);
         
         if (found.istStatisch) {
-          // Static list flow: load members as base pool and open Phase 1 for filter configuration
+          // Static list flow: open direct member view first!
           const pool = allKinder.filter((k) => found.kinderIds?.includes(k.id));
           setGefiltertePool(pool);
-          setPhase('filter');
+          setPhase('statisch_mitglieder');
         } else if (found.filterOptionen) {
           // Dynamic template flow
           setFilter(found.filterOptionen);
@@ -97,10 +103,10 @@ function ListenPageContent() {
     
     if (v) {
       if (v.istStatisch) {
-        // Static list flow: load members as base pool and open Phase 1 for filter configuration
+        // Static list flow: open direct member view first!
         const pool = allKinder.filter((k) => v.kinderIds?.includes(k.id));
         setGefiltertePool(pool);
-        setPhase('filter');
+        setPhase('statisch_mitglieder');
       } else if (v.filterOptionen) {
         // Dynamic template flow
         setFilter(v.filterOptionen);
@@ -120,11 +126,28 @@ function ListenPageContent() {
     }
   };
 
-  // 4. Save template handler
+  // Handler for editing a child in direct static member view
+  const handleEditKindRequest = (kind: Kind) => {
+    setEditingKind(kind);
+    setIsEditKindOpen(true);
+  };
+
+  const handleSaveKind = async (data: Omit<Kind, 'id' | 'geaendertAm'>) => {
+    if (!editingKind) return;
+    try {
+      await kindAktualisieren(editingKind.id, data);
+      showToast(`Kind '${data.vorname}' erfolgreich aktualisiert.`, 'success');
+      setIsEditKindOpen(false);
+      setEditingKind(undefined);
+    } catch (err: any) {
+      showToast(err.message || 'Fehler beim Bearbeiten des Kindes.', 'error');
+    }
+  };
+
+  // Save template handler
   const handleSaveVorlage = async (name: string, updateExisting: boolean, beschreibung?: string) => {
     try {
       if (updateExisting && aktiveVorlage) {
-        // Save updates on existing template
         const updated: Listenvorlage = {
           ...aktiveVorlage,
           filterOptionen: filter,
@@ -134,7 +157,6 @@ function ListenPageContent() {
         setAktiveVorlage(updated);
         showToast(`Vorlage '${updated.name}' aktualisiert.`, 'success');
       } else {
-        // Create new template record
         const uuid = typeof crypto !== 'undefined' && crypto.randomUUID
           ? crypto.randomUUID()
           : Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
@@ -158,7 +180,7 @@ function ListenPageContent() {
     }
   };
 
-  // 5. Delete template handler
+  // Delete template handler
   const handleDeleteVorlage = async (v: Listenvorlage) => {
     if (!window.confirm(`Möchtest du die Vorlage '${v.name}' wirklich löschen?`)) {
       return;
@@ -175,7 +197,7 @@ function ListenPageContent() {
     }
   };
 
-  // 6. Action: Generate filter pool and go to Phase 2 (Selection Table)
+  // Generate filter pool and go to Phase 2 (Selection Table)
   const handleStartSelection = () => {
     if (allKinder.length === 0) {
       showToast('Es sind noch keine Kinder in der Datenbank eingetragen.', 'info');
@@ -199,16 +221,15 @@ function ListenPageContent() {
 
     setGefiltertePool(gefilterte);
     setManuellGewaehltIds([]);
-    setPhase('auswahl'); // Go to selection phase
+    setPhase('auswahl');
   };
 
-  // 7. Toggle manual selection of a kid in Phase 2
+  // Toggle manual selection of a kid in Phase 2
   const handleToggleSelectKid = (id: string) => {
     setManuellGewaehltIds((prev) => {
       if (prev.includes(id)) {
         return prev.filter((item) => item !== id);
       } else {
-        // Prevent selecting more than target limit if limit is configured
         if (filter.anzahl !== undefined && filter.anzahl > 0 && prev.length >= filter.anzahl) {
           showToast(`Limit von ${filter.anzahl} Kindern erreicht. Wenn du dieses Kind auswählst, wird die Liste beim Erstellen vergrößert.`, 'info');
         }
@@ -217,121 +238,123 @@ function ListenPageContent() {
     });
   };
 
-  // 8. Phase 2 Completion: Apply selection and fill the rest per rotation
-  const handleProceedToResult = async (onlyManual: boolean) => {
-    const freshKids = await db.kinder.toArray();
-    // Restrict the selection pool to exactly the children that were filtered and visible in Phase 2
-    const allowedIds = new Set(gefiltertePool.map((k) => k.id));
-    const activeFilterPool = freshKids.filter((k) => allowedIds.has(k.id));
-
-    let finalSelection: Kind[] = [];
-    
-    // Read activity logs specific to the active template
-    const templateLogMap = aktiveVorlage 
-      ? await letzteAktivitaetProKindFuerVorlage(aktiveVorlage.id) 
+  // Finalize selection and generate result list (Phase 3)
+  const handleFinalizeList = async () => {
+    const logMapFuerVorlage = aktiveVorlage?.id 
+      ? (aktivitaetsLogMap.get(aktiveVorlage.id) || new Map<string, string>())
       : undefined;
 
-    if (onlyManual || aktiveVorlage?.istStatisch || filter.anzahl === undefined) {
-      if (manuellGewaehltIds.length > 0) {
-        // Use exactly the manually clicked items
-        finalSelection = activeFilterPool.filter((k) => manuellGewaehltIds.includes(k.id));
-      } else {
-        // Fallback: Use all kids in this static pool (e.g. for printing a checklist)
-        finalSelection = [...activeFilterPool];
-      }
-    } else {
-      // Standard selection: Pinned kids + rest filled by rotation/random
-      finalSelection = kinderAuswaehlen(
-        activeFilterPool,
-        filter.anzahl,
-        filter.zufallsauswahl,
-        templateLogMap,
-        manuellGewaehltIds
-      );
+    const endgueltigeAuswahl = kinderAuswaehlen(
+      gefiltertePool,
+      filter.anzahl,
+      filter.zufallsauswahl,
+      logMapFuerVorlage,
+      manuellGewaehltIds
+    );
+
+    if (endgueltigeAuswahl.length === 0) {
+      showToast('Es wurden keine Kinder ausgewählt.', 'error');
+      return;
     }
 
-    // Generate readable filter information summary text
-    const filterTeile: string[] = [];
-    
+    setGenerierteKinder(endgueltigeAuswahl);
+
+    // Build filter summary text
+    let info = '';
     if (aktiveVorlage) {
-      filterTeile.push(aktiveVorlage.istStatisch ? `Feste Liste: ${aktiveVorlage.name}` : `Vorlage: ${aktiveVorlage.name}`);
-    } else {
-      filterTeile.push('Einmal-Liste');
+      info += `Vorlage: "${aktiveVorlage.name}" • `;
     }
-
     if (filter.gruppen.length > 0) {
-      filterTeile.push(`Gruppen: ${filter.gruppen.join(', ')}`);
+      info += `Gruppen: ${filter.gruppen.join(', ')} • `;
+    } else {
+      info += 'Alle Gruppen • ';
     }
-
-    if (manuellGewaehltIds.length > 0) {
-      filterTeile.push(`${manuellGewaehltIds.length} gesetzt`);
+    if (filter.alterVon !== undefined || filter.alterBis !== undefined) {
+      info += `Alter: ${filter.alterVon || 0}-${filter.alterBis || 99} J. • `;
     }
-    
-    if (!onlyManual && filter.anzahl && finalSelection.length > manuellGewaehltIds.length) {
-      const rest = finalSelection.length - manuellGewaehltIds.length;
-      filterTeile.push(`${rest} per ${filter.zufallsauswahl ? 'Rotation' : 'Zufall'} aufgefüllt`);
-    }
+    info += `${endgueltigeAuswahl.length} Kinder (${filter.zufallsauswahl ? 'Zufall' : 'Rotations-Fokus'})`;
+    setFilterInfoText(info);
 
-    setGenerierteKinder(finalSelection);
-    setFilterInfoText(filterTeile.join(' | '));
-    setPhase('ergebnis'); // Show results
-    showToast(`Liste mit ${finalSelection.length} Kindern erstellt.`, 'success');
-  };
-
-  // 9. Mark participation in Phase 3
-  const handleRefresh = async () => {
-    // If a template is loaded, we write template specific log.
-    // Otherwise, we write global activity date.
-    const ids = generierteKinder.map((k) => k.id);
-    
-    try {
-      if (aktiveVorlage) {
-        await aktivitaetFuerVorlageMarkieren(aktiveVorlage.id, ids);
-        showToast(`Aktivität für '${aktiveVorlage.name}' eingetragen!`, 'success');
-      } else {
-        await aktivitaetenMarkieren(ids);
-        showToast('Globale Aktivitäten eingetragen!', 'success');
+    // Update last used timestamp if using a template
+    if (aktiveVorlage) {
+      try {
+        const updated: Listenvorlage = {
+          ...aktiveVorlage,
+          zuletztVerwendetAm: new Date().toISOString()
+        };
+        await vorlageSpeichern(updated);
+        setAktiveVorlage(updated);
+      } catch (err) {
+        console.error('Fehler beim Aktualisieren des Vorlagen-Zeitstempels:', err);
       }
-      
-      // Reload current selection with updated database state
-      const freshKids = await db.kinder.toArray();
-      const updatedSelection = generierteKinder.map((gk) => {
-        const found = freshKids.find((fk) => fk.id === gk.id);
-        return found ? found : gk;
-      });
-      setGenerierteKinder(updatedSelection);
-    } catch (e: any) {
-      showToast(e.message || 'Fehler beim Markieren.', 'error');
+    }
+
+    setPhase('ergebnis');
+    showToast('Liste erfolgreich generiert!', 'success');
+  };
+
+  // Confirm activity execution (Marks kids in activity log)
+  const handleConfirmActivity = async () => {
+    if (generierteKinder.length === 0) return;
+
+    try {
+      const kinderIds = generierteKinder.map((k) => k.id);
+      if (aktiveVorlage?.id) {
+        await aktivitaetFuerVorlageMarkieren(aktiveVorlage.id, kinderIds);
+      } else {
+        await aktivitaetenMarkieren(kinderIds);
+      }
+
+      showToast(`Aktivität für ${generierteKinder.length} Kinder erfolgreich in der Historie erfasst!`, 'success');
+
+      // Reset flow
+      setPhase('filter');
+      setGenerierteKinder([]);
+      setManuellGewaehltIds([]);
+    } catch (error: any) {
+      showToast(error.message || 'Fehler beim Erfassen der Aktivität.', 'error');
     }
   };
+
+  // Re-read current member pool if DB changes
+  const currentStaticPool = React.useMemo(() => {
+    if (aktiveVorlage?.istStatisch && aktiveVorlage.kinderIds) {
+      const set = new Set(aktiveVorlage.kinderIds);
+      return allKinder.filter((k) => set.has(k.id)).sort((a, b) => a.vorname.localeCompare(b.vorname, 'de'));
+    }
+    return [];
+  }, [aktiveVorlage, allKinder]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-in fade-in duration-200">
       
-      {/* Page Header */}
-      <div className="no-print select-none flex items-center justify-between">
+      {/* Top Header & Navigation */}
+      <div className="no-print select-none flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-extrabold text-slate-800 flex items-center gap-2">
-            📋 Listengenerator
+            📋 Listen-Generator
           </h1>
           <p className="text-slate-500 text-sm md:text-base mt-1">
-            Erstelle schnelle Aktivitäten- und Gruppenlisten mit Rotationslogik und manueller Auswahl.
+            {phase === 'statisch_mitglieder' && 'Mitgliederübersicht deiner festen Gruppe. Du kannst Kinder direkt bearbeiten oder eine Aktivität generieren.'}
+            {phase === 'filter' && 'Schritt 1 von 3: Wähle Kriterien für deine Aktivität aus.'}
+            {phase === 'auswahl' && 'Schritt 2 von 3: Wähle Kinder manuell aus oder lasse die App auffüllen.'}
+            {phase === 'ergebnis' && 'Schritt 3 von 3: Deine fertige Liste. Drucke sie aus oder erfasse die Aktivität.'}
           </p>
         </div>
-        
+
+        {/* Save as Template button */}
         {phase === 'filter' && (
           <button
             onClick={() => setIsSaveDialogOpen(true)}
-            className="py-2.5 px-4 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl transition text-sm flex items-center gap-1.5 focus:outline-none"
-            title="Aktuelle Filtereinstellungen speichern"
+            className="py-3 px-5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-2xl shadow-sm text-sm transition focus:outline-none flex items-center justify-center gap-1.5 self-start md:self-auto"
           >
             💾 Als Vorlage speichern
           </button>
         )}
       </div>
 
-      {/* Template selector strip (Only in filter configuration phase) */}
-      {phase === 'filter' && (
+      {/* Template selector strip (Only in filter configuration phase or static view) */}
+      {(phase === 'filter' || phase === 'statisch_mitglieder') && (
         <div className="no-print">
           <VorlagenLeiste
             vorlagen={vorlagen}
@@ -342,9 +365,111 @@ function ListenPageContent() {
         </div>
       )}
 
-      {/* 3-Phase content container */}
+      {/* 4-Phase content container */}
       <div className="grid grid-cols-1 gap-6">
         
+        {/* PHASE 0: Direct Static Group Member View */}
+        {phase === 'statisch_mitglieder' && aktiveVorlage?.istStatisch && (
+          <div className="no-print space-y-6 animate-in fade-in duration-200">
+            
+            {/* Header Card */}
+            <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-2xl">👥</span>
+                  <h2 className="text-2xl font-black text-slate-800">{aktiveVorlage.name}</h2>
+                  <span className="bg-purple-100 text-purple-700 font-extrabold text-xs px-3 py-1 rounded-full">
+                    Feste Gruppe • {currentStaticPool.length} Kinder
+                  </span>
+                </div>
+                {aktiveVorlage.beschreibung && (
+                  <p className="text-sm text-slate-500 mt-1 italic">{aktiveVorlage.beschreibung}</p>
+                )}
+              </div>
+
+              {/* Action Button to Filter Flow */}
+              <button
+                onClick={() => setPhase('filter')}
+                className="py-3.5 px-6 bg-purple-600 hover:bg-purple-700 text-white font-extrabold rounded-2xl shadow-md transition text-sm flex items-center justify-center gap-2 shrink-0 focus:outline-none"
+              >
+                ⚡ Aktivität für diese Gruppe generieren (Filtern & Ziehen) &rarr;
+              </button>
+            </div>
+
+            {/* Members Table Card */}
+            <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden select-none">
+              <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                  <span>Mitglieder dieser Gruppe</span>
+                  <span className="bg-slate-200 text-slate-700 text-xs px-2 py-0.5 rounded-full font-bold">
+                    {currentStaticPool.length}
+                  </span>
+                </h3>
+                <span className="text-xs text-slate-500">
+                  💡 Bearbeitungen hier werden sofort mit dem Kinder-Tab & Cloud-Sync abgeglichen.
+                </span>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-100 text-xs font-bold text-slate-400 uppercase tracking-wider bg-slate-50/30">
+                      <th className="py-3.5 px-4 w-12 text-center">#</th>
+                      <th className="py-3.5 px-4">Name</th>
+                      <th className="py-3.5 px-4">Gruppe</th>
+                      <th className="py-3.5 px-4">Alter</th>
+                      <th className="py-3.5 px-4">Besonderheiten</th>
+                      <th className="py-3.5 px-4 text-right">Aktion</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-sm">
+                    {currentStaticPool.map((kind, idx) => (
+                      <tr key={kind.id} className="hover:bg-slate-50/80 transition">
+                        <td className="py-3.5 px-4 text-center font-bold text-slate-400 text-xs">
+                          {idx + 1}
+                        </td>
+                        <td className="py-3.5 px-4 font-bold text-slate-800">
+                          {kind.vorname}
+                        </td>
+                        <td className="py-3.5 px-4 text-slate-600 font-semibold">
+                          <span className="bg-slate-100 text-slate-700 px-2.5 py-1 rounded-lg text-xs font-bold">
+                            {kind.gruppe}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4 text-slate-600 whitespace-nowrap">
+                          {formatierteAltersAngabe(kind.geburtsdatum)}
+                        </td>
+                        <td className="py-3.5 px-4 text-slate-500 italic">
+                          {kind.besonderheiten || '-'}
+                        </td>
+                        <td className="py-3.5 px-4 text-right">
+                          <button
+                            onClick={() => handleEditKindRequest(kind)}
+                            className="py-1.5 px-3 bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold rounded-xl text-xs transition border border-purple-200 focus:outline-none"
+                          >
+                            ✏️ Bearbeiten
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Bottom Action Button */}
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={() => setPhase('filter')}
+                className="py-4 px-8 bg-purple-600 hover:bg-purple-700 text-white font-extrabold rounded-2xl shadow-lg transition text-base flex items-center gap-2 focus:outline-none"
+              >
+                ⚡ Aktivität für diese Gruppe generieren (Filtern & Ziehen) &rarr;
+              </button>
+            </div>
+
+          </div>
+        )}
+
         {/* Phase 1: Filter Panel */}
         {phase === 'filter' && (
           <div className="no-print space-y-4">
@@ -359,6 +484,12 @@ function ListenPageContent() {
                     </p>
                   </div>
                 </div>
+                <button
+                  onClick={() => setPhase('statisch_mitglieder')}
+                  className="py-2 px-3 bg-white border border-purple-200 text-purple-700 font-bold rounded-xl text-xs hover:bg-purple-100 transition shrink-0"
+                >
+                  &larr; Zurück zur Mitgliederansicht
+                </button>
               </div>
             )}
             <FilterPanel
@@ -366,7 +497,7 @@ function ListenPageContent() {
               filter={filter}
               setFilter={setFilter}
               onGenerate={handleStartSelection}
-              hasResults={false} // Selection is step 2 now
+              hasResults={false}
             />
           </div>
         )}
@@ -383,21 +514,23 @@ function ListenPageContent() {
               vorlagen={vorlagen}
               aktiveVorlage={aktiveVorlage}
               aktivitaetsLogMap={aktivitaetsLogMap}
-              onProceed={handleProceedToResult}
+              onProceed={handleFinalizeList}
               onBack={() => setPhase('filter')}
               limit={filter.anzahl}
             />
           </div>
         )}
 
-        {/* Phase 3: Results (Table and PDF/Print controls) */}
+        {/* Phase 3: Result List */}
         {phase === 'ergebnis' && (
           <>
-            <ErgebnisListe
-              kinder={generierteKinder}
-              filterInfoText={filterInfoText}
-              onRefresh={handleRefresh}
-            />
+            <div className="no-print">
+              <ErgebnisListe
+                kinder={generierteKinder}
+                filterInfoText={filterInfoText}
+                onRefresh={handleConfirmActivity}
+              />
+            </div>
             
             {/* Go Back button to re-adjust selections in Phase 3 */}
             <div className="no-print flex justify-start">
@@ -427,13 +560,29 @@ function ListenPageContent() {
         aktiveVorlage={aktiveVorlage}
       />
 
+      {/* Edit Kid Modal inside static member view */}
+      <KindFormular
+        isOpen={isEditKindOpen}
+        onClose={() => {
+          setIsEditKindOpen(false);
+          setEditingKind(undefined);
+        }}
+        kind={editingKind}
+        gruppen={gruppen}
+        onSave={handleSaveKind}
+      />
+
     </div>
   );
 }
 
 export default function ListenPage() {
   return (
-    <Suspense fallback={<div className="text-center p-12 text-slate-400 select-none">Lade Listengenerator...</div>}>
+    <Suspense fallback={
+      <div className="p-8 text-center text-slate-500 font-bold">
+        Listen-Generator wird geladen...
+      </div>
+    }>
       <ListenPageContent />
     </Suspense>
   );
