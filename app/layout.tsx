@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import Navigation from "@/components/Navigation";
 import { ToastProvider } from "@/components/Toast";
+import { SyncProvider } from "@/components/SyncProvider";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -31,10 +32,12 @@ export default function RootLayout({
     <html lang="de" className={`${inter.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col font-sans bg-[#FAFAF5]">
         <ToastProvider>
-          <Navigation />
-          <main className="flex-1 w-full max-w-6xl mx-auto px-4 py-6 md:px-8 md:py-10">
-            {children}
-          </main>
+          <SyncProvider>
+            <Navigation />
+            <main className="flex-1 w-full max-w-6xl mx-auto px-4 py-6 md:px-8 md:py-10">
+              {children}
+            </main>
+          </SyncProvider>
         </ToastProvider>
       </body>
     </html>

@@ -4,10 +4,12 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import DatenSicherung from './DatenSicherung';
+import { useSync } from './SyncProvider';
 
 export default function Navigation() {
   const pathname = usePathname();
   const [isBackupOpen, setIsBackupOpen] = useState(false);
+  const { status, roomName } = useSync();
 
   const isActive = (path: string) => {
     if (path === '/') {
@@ -22,6 +24,35 @@ export default function Navigation() {
       return `${base} bg-white text-[#4A90D9] shadow-sm`;
     }
     return `${base} text-white/90 hover:text-white hover:bg-white/10`;
+  };
+
+  const getSyncBadge = () => {
+    if (!roomName) return null;
+    switch (status) {
+      case 'connected':
+        return (
+          <span className="inline-flex items-center gap-1 text-xs bg-emerald-500/20 text-emerald-100 border border-emerald-400/30 px-2 py-1 rounded-lg font-bold">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span className="hidden lg:inline">iPad-Sync aktiv</span>
+          </span>
+        );
+      case 'connecting':
+        return (
+          <span className="inline-flex items-center gap-1 text-xs bg-amber-500/20 text-amber-100 border border-amber-400/30 px-2 py-1 rounded-lg font-bold">
+            <span className="w-2 h-2 rounded-full bg-amber-300 animate-ping"></span>
+            <span className="hidden lg:inline">iPad-Sync sucht...</span>
+          </span>
+        );
+      case 'error':
+        return (
+          <span className="inline-flex items-center gap-1 text-xs bg-rose-500/20 text-rose-100 border border-rose-400/30 px-2 py-1 rounded-lg font-bold">
+            <span className="w-2 h-2 rounded-full bg-rose-400"></span>
+            <span className="hidden lg:inline">iPad-Sync Fehler</span>
+          </span>
+        );
+      default:
+        return null;
+    }
   };
 
   return (
@@ -51,6 +82,7 @@ export default function Navigation() {
               className="px-3 py-2 md:px-4 md:py-2.5 rounded-xl font-bold transition text-sm md:text-base lg:text-lg text-white/90 hover:text-white hover:bg-white/10 flex items-center gap-1.5 focus:outline-none"
             >
               💾 <span className="hidden sm:inline">Datensicherung</span><span className="sm:hidden">Backup</span>
+              {getSyncBadge()}
             </button>
           </nav>
 

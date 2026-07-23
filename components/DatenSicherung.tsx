@@ -1,10 +1,9 @@
 'use client';
 
 import React, { useRef, useState, useEffect } from 'react';
-import { datenExportieren, datenImportieren, datenZusammenfuehren, datenUeberschreiben } from '@/lib/db-operations';
-import { db } from '@/lib/db';
+import { datenExportieren, datenImportieren } from '@/lib/db-operations';
 import { useToast } from './Toast';
-import type { Peer, DataConnection } from 'peerjs';
+import { useSync } from './SyncProvider';
 
 interface DatenSicherungProps {
   isOpen: boolean;
@@ -17,6 +16,17 @@ export default function DatenSicherung({ isOpen, onClose }: DatenSicherungProps)
   const { showToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
+  const {
+    status,
+    roomName: contextRoom,
+    deviceRole: contextRole,
+    autoSync: contextAuto,
+    errorMsg: contextError,
+    saveSettings,
+    triggerSync,
+    connectP2P,
+  } = useSync();
+
   // Tab control
   const [activeTab, setActiveTab] = useState<Tab>('file');
 
@@ -25,49 +35,19 @@ export default function DatenSicherung({ isOpen, onClose }: DatenSicherungProps)
   const [confirmOverwrite, setConfirmOverwrite] = useState(false);
   const [pendingJson, setPendingJson] = useState<string | null>(null);
 
-  // P2P WebRTC states
-  const [roomName, setRoomName] = useState('');
-  const [deviceRole, setDeviceRole] = useState<'1' | '2'>('1');
-  const [peer, setPeer] = useState<Peer | null>(null);
-  const [connection, setConnection] = useState<DataConnection | null>(null);
-  const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
-  const [errorMsg, setErrorMsg] = useState('');
-  const [isSyncing, setIsSyncing] = useState(false);
+  // Form states for sync settings
+  const [roomNameInput, setRoomNameInput] = useState('');
+  const [deviceRoleInput, setDeviceRoleInput] = useState<'1' | '2'>('1');
+  const [autoSyncInput, setAutoSyncInput] = useState(true);
 
-  const connectIntervalRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Load saved sync config from localstorage on mount
+  // Initialize input state from context
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const savedRoom = localStorage.getItem('klisten_sync_room') || '';
-      const savedRole = localStorage.getItem('klisten_sync_role') as '1' | '2' || '1';
-      setRoomName(savedRoom);
-      setDeviceRole(savedRole);
+    if (isOpen) {
+      setRoomNameInput(contextRoom);
+      setDeviceRoleInput(contextRole);
+      setAutoSyncInput(contextAuto);
     }
-  }, []);
-
-  // Cleanup peer connection on unmount or close
-  useEffect(() => {
-    return () => {
-      cleanupP2P();
-    };
-  }, []);
-
-  const cleanupP2P = () => {
-    if (connectIntervalRef.current) {
-      clearInterval(connectIntervalRef.current);
-      connectIntervalRef.current = null;
-    }
-    if (connection) {
-      connection.close();
-      setConnection(null);
-    }
-    if (peer) {
-      peer.destroy();
-      setPeer(null);
-    }
-    setConnectionStatus('disconnected');
-  };
+  }, [isOpen, contextRoom, contextRole, contextAuto]);
 
   // --- FILE BACKUP HANDLERS ---
   const handleExport = async () => {
@@ -85,7 +65,7 @@ export default function DatenSicherung({ isOpen, onClose }: DatenSicherungProps)
       URL.revokeObjectURL(url);
       showToast('Daten erfolgreich als JSON exportiert!', 'success');
     } catch (error: any) {
-      showToast(error.message || 'Export failed.', 'error');
+      showToast(error.message || 'Export fehlgeschlagen.', 'error');
     }
   };
 
@@ -110,12 +90,9 @@ export default function DatenSicherung({ isOpen, onClose }: DatenSicherungProps)
     setIsImporting(true);
     try {
       await datenImportieren(pendingJson);
-      showToast('Daten erfolgreich importiert und überschrieben!', 'success');
+      showToast('Daten erfolgreich importiert!', 'success');
       setConfirmOverwrite(false);
       setPendingJson(null);
-      setTimeout(() => {
-        window.location.reload();
-      }, 1000);
     } catch (error: any) {
       showToast(error.message || 'Import fehlgeschlagen.', 'error');
       setConfirmOverwrite(false);
@@ -125,149 +102,29 @@ export default function DatenSicherung({ isOpen, onClose }: DatenSicherungProps)
     }
   };
 
-  // --- P2P WLAN SYNC HANDLERS ---
-  const handleStartP2P = async () => {
-    if (!roomName.trim()) {
-      setErrorMsg('Bitte gib ein Kita-Codewort an.');
-      setConnectionStatus('error');
+  // --- SYNC SETTINGS HANDLERS ---
+  const handleSaveSyncSettings = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!roomNameInput.trim()) {
+      showToast('Bitte gib ein Kita-Codewort an.', 'error');
       return;
     }
-
-    cleanupP2P();
-    setConnectionStatus('connecting');
-    setErrorMsg('');
-
-    // Save configuration locally
-    localStorage.setItem('klisten_sync_room', roomName.trim());
-    localStorage.setItem('klisten_sync_role', deviceRole);
-
-    const cleanRoom = roomName.toLowerCase().replace(/[^a-z0-9]/g, '');
-    const myPeerId = `klisten-${cleanRoom}-${deviceRole}`;
-    const targetPeerId = `klisten-${cleanRoom}-${deviceRole === '1' ? '2' : '1'}`;
-
-    try {
-      // Dynamic import of PeerJS to bypass SSR build checks
-      const { Peer } = await import('peerjs');
-      
-      const newPeer = new Peer(myPeerId, {
-        debug: 1, // Only print warnings/errors
-      });
-
-      newPeer.on('open', (id) => {
-        console.log('PeerJS registration successful. My Peer ID:', id);
-        
-        // Loop connecting to the target peer ID until connected
-        connectIntervalRef.current = setInterval(() => {
-          if (newPeer.destroyed || connectionStatus === 'connected') return;
-          console.log(`Connecting to peer: ${targetPeerId}...`);
-          const conn = newPeer.connect(targetPeerId, {
-            serialization: 'json'
-          });
-          setupConnection(conn);
-        }, 3000);
-      });
-
-      newPeer.on('connection', (conn) => {
-        console.log('Incoming connection received from target peer!');
-        setupConnection(conn);
-      });
-
-      newPeer.on('error', (err) => {
-        console.error('PeerJS global error:', err);
-        setErrorMsg('Verbindungsservice nicht erreichbar. Bitte überprüfe dein Internet.');
-        setConnectionStatus('error');
-        cleanupP2P();
-      });
-
-      setPeer(newPeer);
-    } catch (err) {
-      console.error('Failed to initialize PeerJS:', err);
-      setErrorMsg('Konnte Synchronisationsmodul nicht laden.');
-      setConnectionStatus('error');
-    }
+    saveSettings(roomNameInput, deviceRoleInput, autoSyncInput);
+    showToast('Sync-Einstellungen gespeichert! Verbindung wird hergestellt...', 'success');
+    connectP2P();
   };
 
-  const setupConnection = (conn: DataConnection) => {
-    conn.on('open', () => {
-      console.log('Data channel open with target peer!');
-      if (connectIntervalRef.current) {
-        clearInterval(connectIntervalRef.current);
-        connectIntervalRef.current = null;
-      }
-      setConnection(conn);
-      setConnectionStatus('connected');
-      showToast('WLAN-Verbindung mit anderem iPad hergestellt!', 'success');
-    });
-
-    conn.on('data', async (incomingData: any) => {
-      console.log('Data package received over WebRTC channel');
-      if (!incomingData || typeof incomingData !== 'object') return;
-
-      setIsSyncing(true);
-      try {
-        const { type, kinder, vorlagen, aktivitaetsLog } = incomingData;
-        if (type === 'sync') {
-          await datenZusammenfuehren(kinder || [], vorlagen || [], aktivitaetsLog || []);
-          showToast('Daten erfolgreich zusammengeführt und aktualisiert!', 'success');
-        } else if (type === 'overwrite') {
-          await datenUeberschreiben(kinder || [], vorlagen || [], aktivitaetsLog || []);
-          showToast('Daten komplett mit Master-iPad überschrieben!', 'success');
-        }
-        
-        setTimeout(() => {
-          window.location.reload();
-        }, 1200);
-      } catch (err: any) {
-        showToast('Fehler beim Verarbeiten der empfangenen Syncdaten.', 'error');
-      } finally {
-        setIsSyncing(false);
-      }
-    });
-
-    conn.on('close', () => {
-      console.log('Data connection closed by peer');
-      showToast('Verbindung zum anderen iPad getrennt.', 'info');
-      setConnectionStatus('disconnected');
-      setConnection(null);
-    });
-
-    conn.on('error', (err) => {
-      console.error('Connection error:', err);
-      showToast('Verbindungsfehler aufgetreten.', 'error');
-      setConnectionStatus('disconnected');
-      setConnection(null);
-    });
-  };
-
-  const triggerSync = async (type: 'sync' | 'overwrite') => {
-    if (!connection || connectionStatus !== 'connected') {
-      showToast('Keine aktive Verbindung vorhanden.', 'error');
-      return;
-    }
-
-    setIsSyncing(true);
+  const handleTriggerSyncNow = async (type: 'sync' | 'overwrite') => {
     try {
-      const kinder = await db.kinder.toArray();
-      const vorlagen = await db.vorlagen.toArray();
-      const aktivitaetsLog = await db.aktivitaetsLog.toArray();
-
-      connection.send({
-        type,
-        kinder,
-        vorlagen,
-        aktivitaetsLog
-      });
-
+      await triggerSync(type);
       showToast(
-        type === 'sync' 
-          ? 'Abgleich gesendet! Warte auf Bestätigung...' 
-          : 'Überschreiben gesendet! Warte auf Bestätigung...', 
-        'info'
+        type === 'sync'
+          ? 'Daten erfolgreich mit dem anderen iPad abgeglichen!'
+          : 'Anderes iPad erfolgreich überschrieben!',
+        'success'
       );
-    } catch (err) {
-      showToast('Fehler beim Auslesen oder Senden der Daten.', 'error');
-    } finally {
-      setIsSyncing(false);
+    } catch (err: any) {
+      showToast(err.message || 'Fehler beim Abgleich.', 'error');
     }
   };
 
@@ -280,7 +137,7 @@ export default function DatenSicherung({ isOpen, onClose }: DatenSicherungProps)
         {/* Modal Header */}
         <div className="bg-[#4A90D9] p-6 text-white flex justify-between items-center">
           <h2 className="text-xl font-bold flex items-center gap-2">
-            💾 Datensicherung & Sync
+            💾 Datensicherung & iPad-Sync
           </h2>
           <button 
             onClick={onClose} 
@@ -312,7 +169,7 @@ export default function DatenSicherung({ isOpen, onClose }: DatenSicherungProps)
                   : 'text-slate-500 hover:text-slate-700'
               }`}
             >
-              🔄 WLAN-Abgleich (P2P)
+              🔄 Automatische iPad-Synchronisation
             </button>
           </div>
         )}
@@ -392,125 +249,131 @@ export default function DatenSicherung({ isOpen, onClose }: DatenSicherungProps)
               </div>
             </>
           ) : (
-            // --- P2P WLAN SYNC TAB ---
-            <div className="space-y-4">
-              <p className="text-slate-600 text-sm leading-relaxed">
-                Gleiche Daten direkt über euer WLAN zwischen zwei iPads ab. Daten fließen direkt verschlüsselt von Gerät zu Gerät.
-              </p>
+            // --- AUTOMATIC P2P WLAN SYNC TAB ---
+            <div className="space-y-5">
+              
+              {/* Connection Status Box */}
+              <div className="p-4 rounded-2xl border flex items-center justify-between gap-4 bg-slate-50 border-slate-200">
+                <div className="flex items-center gap-3">
+                  {status === 'connected' && <span className="text-2xl">🟢</span>}
+                  {status === 'connecting' && <span className="text-2xl animate-spin">⏳</span>}
+                  {status === 'disconnected' && <span className="text-2xl">⚪</span>}
+                  {status === 'error' && <span className="text-2xl">🔴</span>}
 
-              {/* Configurations */}
-              {connectionStatus === 'disconnected' ? (
-                <div className="space-y-3 bg-purple-50/40 p-4 rounded-2xl border border-purple-100/50">
-                  <div className="space-y-1">
-                    <label htmlFor="p2pRoom" className="block text-xs font-bold text-purple-700 uppercase">
-                      Kita-Codewort (eindeutiger Schlüssel)
-                    </label>
-                    <input
-                      type="text"
-                      id="p2pRoom"
-                      value={roomName}
-                      onChange={(e) => setRoomName(e.target.value)}
-                      placeholder="z.B. kita-marienkaefer-sync"
-                      className="w-full p-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-600/30 transition"
-                    />
+                  <div>
+                    <h4 className="font-bold text-slate-800 text-sm">
+                      {status === 'connected' && 'Verbunden mit anderem iPad!'}
+                      {status === 'connecting' && 'Verbindung wird aufgebaut...'}
+                      {status === 'disconnected' && 'Nicht verbunden'}
+                      {status === 'error' && 'Verbindungsfehler'}
+                    </h4>
+                    <p className="text-xs text-slate-500">
+                      {status === 'connected' && 'Änderungen werden in Echtzeit synchronisiert.'}
+                      {status === 'connecting' && 'Sucht das zweite iPad im WLAN...'}
+                      {status === 'disconnected' && 'Bitte erstelle Einstellungen unten.'}
+                      {status === 'error' && (contextError || 'Signaling-Server nicht erreichbar.')}
+                    </p>
                   </div>
-
-                  <div className="space-y-1">
-                    <span className="block text-xs font-bold text-purple-700 uppercase">
-                      Dieses iPad ist:
-                    </span>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setDeviceRole('1')}
-                        className={`p-2 rounded-lg text-xs font-bold transition focus:outline-none border ${
-                          deviceRole === '1'
-                            ? 'bg-purple-600 border-purple-600 text-white'
-                            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                        }`}
-                      >
-                        Gerät 1
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setDeviceRole('2')}
-                        className={`p-2 rounded-lg text-xs font-bold transition focus:outline-none border ${
-                          deviceRole === '2'
-                            ? 'bg-purple-600 border-purple-600 text-white'
-                            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                        }`}
-                      >
-                        Gerät 2
-                      </button>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={handleStartP2P}
-                    className="w-full mt-2 py-3 px-4 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-sm transition focus:outline-none"
-                  >
-                    🔄 Verbindung starten
-                  </button>
                 </div>
-              ) : (
-                /* Active status panel */
-                <div className="p-4 rounded-2xl border flex flex-col items-center text-center space-y-3 bg-white border-slate-100 shadow-sm">
-                  
-                  {connectionStatus === 'connecting' && (
-                    <>
-                      <span className="text-3xl animate-bounce">⏳</span>
-                      <h4 className="font-bold text-slate-800 text-sm">Warte auf das zweite iPad...</h4>
-                      <p className="text-xs text-slate-500 max-w-xs leading-relaxed">
-                        Stelle sicher, dass auf dem anderen iPad ebenfalls dieser Sync-Tab geöffnet ist, das gleiche Codewort verwendet wird und die andere Rolle ausgewählt ist.
-                      </p>
-                    </>
-                  )}
 
-                  {connectionStatus === 'connected' && (
-                    <>
-                      <span className="text-3xl">🟢</span>
-                      <h4 className="font-bold text-emerald-800 text-sm">Verbunden mit anderem iPad!</h4>
-                      
-                      <div className="w-full grid grid-cols-1 gap-2 pt-2">
-                        <button
-                          onClick={() => triggerSync('sync')}
-                          disabled={isSyncing}
-                          className="w-full py-3 px-4 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-sm transition focus:outline-none disabled:opacity-50"
-                        >
-                          🔄 Daten abgleichen (Zusammenführen)
-                        </button>
-                        
-                        <button
-                          onClick={() => {
-                            if (window.confirm('Das andere iPad wird komplett mit den Daten dieses Geräts überschrieben. Fortfahren?')) {
-                              triggerSync('overwrite');
-                            }
-                          }}
-                          disabled={isSyncing}
-                          className="w-full py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 font-bold rounded-xl text-sm transition focus:outline-none disabled:opacity-50"
-                        >
-                          📤 Anderes iPad überschreiben (Master)
-                        </button>
-                      </div>
-                    </>
-                  )}
-
-                  {connectionStatus === 'error' && (
-                    <>
-                      <span className="text-3xl">❌</span>
-                      <h4 className="font-bold text-rose-800 text-sm">Verbindungsfehler</h4>
-                      <p className="text-xs text-rose-600 max-w-xs">{errorMsg}</p>
-                    </>
-                  )}
-
+                {status === 'connected' && (
                   <button
-                    onClick={cleanupP2P}
-                    className="py-1.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-lg text-xs font-bold transition focus:outline-none"
+                    onClick={() => handleTriggerSyncNow('sync')}
+                    className="py-2 px-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-xs transition shrink-0 shadow-sm"
                   >
-                    Trennen / Zurück
+                    🔄 Jetzt abgleichen
+                  </button>
+                )}
+              </div>
+
+              {/* Form Settings */}
+              <form onSubmit={handleSaveSyncSettings} className="space-y-4 bg-purple-50/40 p-5 rounded-2xl border border-purple-100/50">
+                <h3 className="text-sm font-bold text-purple-900 uppercase tracking-wider">
+                  Sync-Konfiguration
+                </h3>
+
+                <div className="space-y-1.5">
+                  <label htmlFor="p2pRoomInput" className="block text-xs font-bold text-slate-700">
+                    Kita-Codewort (eindeutiger Schlüssel) *
+                  </label>
+                  <input
+                    type="text"
+                    id="p2pRoomInput"
+                    value={roomNameInput}
+                    onChange={(e) => setRoomNameInput(e.target.value)}
+                    placeholder="z.B. kita-sonnenschein-2026"
+                    className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-600/30 transition"
+                  />
+                  <p className="text-[11px] text-slate-400">Beide iPads müssen exakt dasselbe Codewort eingetragen haben.</p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold text-slate-700">
+                    Dieses iPad ist:
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setDeviceRoleInput('1')}
+                      className={`p-2.5 rounded-xl text-xs font-bold transition focus:outline-none border ${
+                        deviceRoleInput === '1'
+                          ? 'bg-purple-600 border-purple-600 text-white shadow-sm'
+                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      Gerät 1
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDeviceRoleInput('2')}
+                      className={`p-2.5 rounded-xl text-xs font-bold transition focus:outline-none border ${
+                        deviceRoleInput === '2'
+                          ? 'bg-purple-600 border-purple-600 text-white shadow-sm'
+                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      Gerät 2
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <input
+                    type="checkbox"
+                    id="autoSyncInput"
+                    checked={autoSyncInput}
+                    onChange={(e) => setAutoSyncInput(e.target.checked)}
+                    className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500/50 border-slate-300"
+                  />
+                  <label htmlFor="autoSyncInput" className="text-xs font-bold text-slate-700 cursor-pointer">
+                    Automatischen WLAN-Sync im Hintergrund aktivieren
+                  </label>
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-3 px-4 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-sm transition focus:outline-none shadow-sm"
+                >
+                  💾 Einstellungen speichern & verbinden
+                </button>
+              </form>
+
+              {/* Master Overwrite Options */}
+              {status === 'connected' && (
+                <div className="pt-2 border-t border-slate-100 flex justify-end">
+                  <button
+                    onClick={() => {
+                      if (window.confirm('Das andere iPad wird komplett mit den Daten dieses Geräts überschrieben. Fortfahren?')) {
+                        handleTriggerSyncNow('overwrite');
+                      }
+                    }}
+                    className="text-xs text-slate-500 hover:text-rose-600 font-semibold"
+                  >
+                    📤 Master-Reset: Das andere iPad komplett überschreiben
                   </button>
                 </div>
               )}
+
             </div>
           )}
         </div>
@@ -518,8 +381,8 @@ export default function DatenSicherung({ isOpen, onClose }: DatenSicherungProps)
         {/* Modal Footer */}
         <div className="bg-slate-50 p-4 border-t border-slate-100 flex justify-end">
           <button
-            onClick={() => { cleanupP2P(); onClose(); }}
-            disabled={isImporting || isSyncing}
+            onClick={onClose}
+            disabled={isImporting}
             className="py-2 px-5 text-slate-500 hover:text-slate-700 font-semibold rounded-lg text-sm"
           >
             Schließen
