@@ -327,6 +327,11 @@ export default function VorlageDruckenDialog({
             font-size: 9.5pt !important;
             height: 26px !important;
           }
+          .print-clean-page tbody tr:nth-child(even) td {
+            background-color: #f8fafc !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
         }
       `}</style>
 
