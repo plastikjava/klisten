@@ -4,17 +4,18 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/lib/db';
-import { Listenvorlage, FilterOptionen } from '@/types';
+import { Listenvorlage } from '@/types';
 import { vorlageSpeichern, vorlageLoeschen } from '@/lib/db-operations';
 import { useToast } from '@/components/Toast';
 
 import VorlageEditFormular from './components/VorlageEditFormular';
 import VorlageStatischDialog from './components/VorlageStatischDialog';
+import VorlageDruckenDialog from './components/VorlageDruckenDialog';
 
 export default function VorlagenPage() {
   const { showToast } = useToast();
 
-  // Queries saved templates from IndexedDB
+  // Queries saved active templates from IndexedDB
   const vorlagen = useLiveQuery(() => db.vorlagen.filter((v) => !v.geloescht).toArray()) || [];
 
   // Edit metadata modal states (Dynamic filter templates)
@@ -23,6 +24,10 @@ export default function VorlagenPage() {
 
   // Static list modal states
   const [isStaticOpen, setIsStaticOpen] = useState(false);
+
+  // Print list modal states
+  const [isPrintOpen, setIsPrintOpen] = useState(false);
+  const [printVorlage, setPrintVorlage] = useState<Listenvorlage | null>(null);
 
   const handleEditRequest = (v: Listenvorlage) => {
     setSelectedVorlage(v);
@@ -36,6 +41,11 @@ export default function VorlagenPage() {
   const handleCreateStaticRequest = () => {
     setSelectedVorlage(null);
     setIsStaticOpen(true);
+  };
+
+  const handlePrintRequest = (v: Listenvorlage) => {
+    setPrintVorlage(v);
+    setIsPrintOpen(true);
   };
 
   const handleSaveEdit = async (updated: Listenvorlage) => {
@@ -153,7 +163,7 @@ export default function VorlagenPage() {
             📚 Vorlagen-Manager
           </h1>
           <p className="text-slate-500 text-sm md:text-base mt-1">
-            Verwalte deine Aktivitätenvorlagen und festen Gruppenlisten, oder starte direkt eine neue Liste.
+            Verwalte deine Aktivitätenvorlagen und festen Gruppenlisten, oder drucke leere Anwesenheitslisten aus.
           </p>
         </div>
         
@@ -256,6 +266,13 @@ export default function VorlagenPage() {
               <div className="bg-slate-50/80 px-6 py-4 border-t border-slate-100 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-1.5">
                   <button
+                    onClick={() => handlePrintRequest(v)}
+                    className="p-2 bg-white border border-slate-200 text-slate-600 hover:text-purple-600 hover:border-purple-200 rounded-xl transition focus:outline-none"
+                    title="Liste drucken mit leeren Ankreuz-Spalten"
+                  >
+                    🖨️
+                  </button>
+                  <button
                     onClick={() => handleEditRequest(v)}
                     className="p-2 bg-white border border-slate-200 text-slate-500 hover:text-purple-600 hover:border-purple-200 rounded-xl transition focus:outline-none"
                     title={v.istStatisch ? 'Feste Liste bearbeiten' : 'Name/Beschreibung bearbeiten'}
@@ -308,6 +325,16 @@ export default function VorlagenPage() {
         }}
         vorlage={selectedVorlage}
         onSave={handleSaveStatic}
+      />
+
+      {/* Print List Dialog Modal with Empty Columns Config */}
+      <VorlageDruckenDialog
+        isOpen={isPrintOpen}
+        onClose={() => {
+          setIsPrintOpen(false);
+          setPrintVorlage(null);
+        }}
+        vorlage={printVorlage}
       />
 
     </div>
