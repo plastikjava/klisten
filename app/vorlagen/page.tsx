@@ -154,156 +154,159 @@ export default function VorlagenPage() {
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-200 no-print">
+    <div className="space-y-6 animate-in fade-in duration-200">
       
-      {/* Page Header */}
-      <div className="select-none flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-extrabold text-slate-800 flex items-center gap-2">
-            📚 Vorlagen-Manager
-          </h1>
-          <p className="text-slate-500 text-sm md:text-base mt-1">
-            Verwalte deine Aktivitätenvorlagen und festen Gruppenlisten, oder drucke leere Anwesenheitslisten aus.
-          </p>
-        </div>
-        
-        <div className="flex flex-col sm:flex-row gap-2 shrink-0 self-stretch sm:self-auto">
-          <button
-            onClick={handleCreateStaticRequest}
-            className="py-3 px-5 bg-purple-600 hover:bg-purple-700 text-white font-extrabold rounded-2xl shadow-sm text-sm transition focus:outline-none flex items-center justify-center gap-1.5"
-          >
-            👥 Feste Liste erstellen
-          </button>
+      {/* Screen UI elements (hidden during print) */}
+      <div className="no-print space-y-6">
+        {/* Page Header */}
+        <div className="select-none flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-extrabold text-slate-800 flex items-center gap-2">
+              📚 Vorlagen-Manager
+            </h1>
+            <p className="text-slate-500 text-sm md:text-base mt-1">
+              Verwalte deine Aktivitätenvorlagen und festen Gruppenlisten, oder drucke leere Anwesenheitslisten aus.
+            </p>
+          </div>
           
-          <Link
-            href="/listen"
-            className="py-3 px-5 bg-[#4A90D9] hover:bg-[#357ABD] text-white font-extrabold rounded-2xl shadow-sm text-sm transition focus:outline-none flex items-center justify-center gap-1.5"
-          >
-            📋 Neue Filter-Vorlage
-          </Link>
-        </div>
-      </div>
-
-      {/* Templates Grid Grid */}
-      {vorlagen.length === 0 ? (
-        <div className="bg-white rounded-3xl border border-slate-100 p-16 text-center space-y-4 shadow-sm select-none">
-          <div className="text-6xl">📚👥</div>
-          <h3 className="text-xl font-bold text-slate-700">Keine Vorlagen gespeichert</h3>
-          <p className="text-slate-500 text-sm max-w-md mx-auto leading-relaxed">
-            Vorlagen helfen dir, feste Gruppen (statische Listen) oder wiederkehrende Aktivitäten mit bestimmten Filtern (dynamische Listen) dauerhaft zu speichern.
-          </p>
-          <div className="pt-4 flex flex-col sm:flex-row justify-center gap-2">
+          <div className="flex flex-col sm:flex-row gap-2 shrink-0 self-stretch sm:self-auto">
             <button
               onClick={handleCreateStaticRequest}
-              className="py-3 px-6 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl shadow-sm text-sm transition"
+              className="py-3 px-5 bg-purple-600 hover:bg-purple-700 text-white font-extrabold rounded-2xl shadow-sm text-sm transition focus:outline-none flex items-center justify-center gap-1.5"
             >
-              👥 Feste Gruppenliste erstellen
+              👥 Feste Liste erstellen
             </button>
+            
             <Link
               href="/listen"
-              className="py-3 px-6 bg-[#4A90D9] hover:bg-[#357ABD] text-white font-bold rounded-xl shadow-sm text-sm transition"
+              className="py-3 px-5 bg-[#4A90D9] hover:bg-[#357ABD] text-white font-extrabold rounded-2xl shadow-sm text-sm transition focus:outline-none flex items-center justify-center gap-1.5"
             >
-              📋 Dynamische Vorlage erstellen
+              📋 Neue Filter-Vorlage
             </Link>
           </div>
         </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 select-none">
-          {vorlagen.map((v) => (
-            <div
-              key={v.id}
-              className="bg-white rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col justify-between overflow-hidden"
-            >
-              {/* Card Body */}
-              <div className="p-6 space-y-4">
-                
-                {/* Header title */}
-                <div className="flex justify-between items-start gap-4">
-                  <h2 className="text-xl font-black text-slate-800 truncate" title={v.name}>
-                    {v.name}
-                  </h2>
-                  <span className={`shrink-0 inline-flex items-center justify-center text-xs font-bold px-2.5 py-1 rounded-full ${
-                    v.istStatisch 
-                      ? 'bg-purple-100 text-purple-700' 
-                      : 'bg-amber-100 text-amber-700'
-                  }`}>
-                    {v.istStatisch ? 'Feste Liste' : 'Filter-Vorlage'}
-                  </span>
-                </div>
 
-                {/* Description */}
-                {v.beschreibung ? (
-                  <p className="text-sm text-slate-500 line-clamp-3 leading-relaxed min-h-[4.5rem]">
-                    {v.beschreibung}
-                  </p>
-                ) : (
-                  <p className="text-sm text-slate-300 italic min-h-[4.5rem]">Keine Beschreibung hinterlegt.</p>
-                )}
-
-                {/* Filter / List info box */}
-                <div className={`p-3 rounded-xl text-xs font-semibold ${
-                  v.istStatisch 
-                    ? 'bg-purple-50/40 border border-purple-100/30 text-purple-900' 
-                    : 'bg-[#FAFAF5] border border-slate-200/50 text-slate-600'
-                }`}>
-                  <span className={`font-bold block text-[10px] uppercase tracking-wider mb-0.5 ${
-                    v.istStatisch ? 'text-purple-400' : 'text-slate-400'
-                  }`}>
-                    {v.istStatisch ? 'Mitglieder' : 'Filterkriterien'}
-                  </span>
-                  {filterZusammenfassung(v)}
-                </div>
-
-                {/* Usage statistics info */}
-                <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400">
-                  <span>Zuletzt genutzt:</span>
-                  <span className="font-bold text-slate-600">{formatDate(v.zuletztVerwendetAm)}</span>
-                </div>
-
-              </div>
-
-              {/* Card Footer Actions */}
-              <div className="bg-slate-50/80 px-6 py-4 border-t border-slate-100 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={() => handlePrintRequest(v)}
-                    className="p-2 bg-white border border-slate-200 text-slate-600 hover:text-purple-600 hover:border-purple-200 rounded-xl transition focus:outline-none"
-                    title="Liste drucken mit leeren Ankreuz-Spalten"
-                  >
-                    🖨️
-                  </button>
-                  <button
-                    onClick={() => handleEditRequest(v)}
-                    className="p-2 bg-white border border-slate-200 text-slate-500 hover:text-purple-600 hover:border-purple-200 rounded-xl transition focus:outline-none"
-                    title={v.istStatisch ? 'Feste Liste bearbeiten' : 'Name/Beschreibung bearbeiten'}
-                  >
-                    ✏️
-                  </button>
-                  <button
-                    onClick={() => handleDeleteRequest(v)}
-                    className="p-2 bg-white border border-slate-200 text-slate-500 hover:text-rose-600 hover:border-rose-200 rounded-xl transition focus:outline-none"
-                    title="Liste löschen"
-                  >
-                    🗑️
-                  </button>
-                </div>
-
-                <Link
-                  href={`/listen?vorlagenId=${v.id}`}
-                  className={`py-2.5 px-4 text-white font-bold rounded-xl shadow-sm text-sm transition focus:outline-none flex items-center gap-1.5 ${
-                    v.istStatisch 
-                      ? 'bg-purple-600 hover:bg-purple-700' 
-                      : 'bg-[#4A90D9] hover:bg-[#357ABD]'
-                  }`}
-                >
-                  {v.istStatisch ? '👥 Anzeigen' : '📋 Liste erstellen'}
-                </Link>
-              </div>
-
+        {/* Templates Grid Grid */}
+        {vorlagen.length === 0 ? (
+          <div className="bg-white rounded-3xl border border-slate-100 p-16 text-center space-y-4 shadow-sm select-none">
+            <div className="text-6xl">📚👥</div>
+            <h3 className="text-xl font-bold text-slate-700">Keine Vorlagen gespeichert</h3>
+            <p className="text-slate-500 text-sm max-w-md mx-auto leading-relaxed">
+              Vorlagen helfen dir, feste Gruppen (statische Listen) oder wiederkehrende Aktivitäten mit bestimmten Filtern (dynamische Listen) dauerhaft zu speichern.
+            </p>
+            <div className="pt-4 flex flex-col sm:flex-row justify-center gap-2">
+              <button
+                onClick={handleCreateStaticRequest}
+                className="py-3 px-6 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl shadow-sm text-sm transition"
+              >
+                👥 Feste Gruppenliste erstellen
+              </button>
+              <Link
+                href="/listen"
+                className="py-3 px-6 bg-[#4A90D9] hover:bg-[#357ABD] text-white font-bold rounded-xl shadow-sm text-sm transition"
+              >
+                📋 Dynamische Vorlage erstellen
+              </Link>
             </div>
-          ))}
-        </div>
-      )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 select-none">
+            {vorlagen.map((v) => (
+              <div
+                key={v.id}
+                className="bg-white rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col justify-between overflow-hidden"
+              >
+                {/* Card Body */}
+                <div className="p-6 space-y-4">
+                  
+                  {/* Header title */}
+                  <div className="flex justify-between items-start gap-4">
+                    <h2 className="text-xl font-black text-slate-800 truncate" title={v.name}>
+                      {v.name}
+                    </h2>
+                    <span className={`shrink-0 inline-flex items-center justify-center text-xs font-bold px-2.5 py-1 rounded-full ${
+                      v.istStatisch 
+                        ? 'bg-purple-100 text-purple-700' 
+                        : 'bg-amber-100 text-amber-700'
+                    }`}>
+                      {v.istStatisch ? 'Feste Liste' : 'Filter-Vorlage'}
+                    </span>
+                  </div>
+
+                  {/* Description */}
+                  {v.beschreibung ? (
+                    <p className="text-sm text-slate-500 line-clamp-3 leading-relaxed min-h-[4.5rem]">
+                      {v.beschreibung}
+                    </p>
+                  ) : (
+                    <p className="text-sm text-slate-300 italic min-h-[4.5rem]">Keine Beschreibung hinterlegt.</p>
+                  )}
+
+                  {/* Filter / List info box */}
+                  <div className={`p-3 rounded-xl text-xs font-semibold ${
+                    v.istStatisch 
+                      ? 'bg-purple-50/40 border border-purple-100/30 text-purple-900' 
+                      : 'bg-[#FAFAF5] border border-slate-200/50 text-slate-600'
+                  }`}>
+                    <span className={`font-bold block text-[10px] uppercase tracking-wider mb-0.5 ${
+                      v.istStatisch ? 'text-purple-400' : 'text-slate-400'
+                    }`}>
+                      {v.istStatisch ? 'Mitglieder' : 'Filterkriterien'}
+                    </span>
+                    {filterZusammenfassung(v)}
+                  </div>
+
+                  {/* Usage statistics info */}
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400">
+                    <span>Zuletzt genutzt:</span>
+                    <span className="font-bold text-slate-600">{formatDate(v.zuletztVerwendetAm)}</span>
+                  </div>
+
+                </div>
+
+                {/* Card Footer Actions */}
+                <div className="bg-slate-50/80 px-6 py-4 border-t border-slate-100 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => handlePrintRequest(v)}
+                      className="p-2 bg-white border border-slate-200 text-slate-600 hover:text-purple-600 hover:border-purple-200 rounded-xl transition focus:outline-none"
+                      title="Liste drucken mit leeren Ankreuz-Spalten"
+                    >
+                      🖨️
+                    </button>
+                    <button
+                      onClick={() => handleEditRequest(v)}
+                      className="p-2 bg-white border border-slate-200 text-slate-500 hover:text-purple-600 hover:border-purple-200 rounded-xl transition focus:outline-none"
+                      title={v.istStatisch ? 'Feste Liste bearbeiten' : 'Name/Beschreibung bearbeiten'}
+                    >
+                      ✏️
+                    </button>
+                    <button
+                      onClick={() => handleDeleteRequest(v)}
+                      className="p-2 bg-white border border-slate-200 text-slate-500 hover:text-rose-600 hover:border-rose-200 rounded-xl transition focus:outline-none"
+                      title="Liste löschen"
+                    >
+                      🗑️
+                    </button>
+                  </div>
+
+                  <Link
+                    href={`/listen?vorlagenId=${v.id}`}
+                    className={`py-2.5 px-4 text-white font-bold rounded-xl shadow-sm text-sm transition focus:outline-none flex items-center gap-1.5 ${
+                      v.istStatisch 
+                        ? 'bg-purple-600 hover:bg-purple-700' 
+                        : 'bg-[#4A90D9] hover:bg-[#357ABD]'
+                    }`}
+                  >
+                    {v.istStatisch ? '👥 Anzeigen' : '📋 Liste erstellen'}
+                  </Link>
+                </div>
+
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Edit Metadata Modal (Dynamic Templates) */}
       <VorlageEditFormular
