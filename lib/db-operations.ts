@@ -249,6 +249,7 @@ export async function datenZusammenfuehren(
       // 1. Merge Kinder
       const localKinder = await db.kinder.toArray();
       const localKinderMap = new Map(localKinder.map(k => [k.id, k]));
+      const importKinderIds = new Set(importKinder.map(k => k.id));
       
       for (const impKind of importKinder) {
         const local = localKinderMap.get(impKind.id);
@@ -263,9 +264,20 @@ export async function datenZusammenfuehren(
         }
       }
 
+      // Mark local kids missing from import payload as soft-deleted
+      for (const [localId, localKind] of localKinderMap.entries()) {
+        if (!importKinderIds.has(localId) && !localKind.geloescht) {
+          await db.kinder.update(localId, {
+            geloescht: true,
+            geaendertAm: new Date().toISOString()
+          });
+        }
+      }
+
       // 2. Merge Vorlagen
       const localVorlagen = await db.vorlagen.toArray();
       const localVorlagenMap = new Map(localVorlagen.map(v => [v.id, v]));
+      const importVorlagenIds = new Set(importVorlagen.map(v => v.id));
 
       for (const impVorlage of importVorlagen) {
         const local = localVorlagenMap.get(impVorlage.id);
@@ -277,6 +289,16 @@ export async function datenZusammenfuehren(
           if (impTime >= localTime) {
             await db.vorlagen.put(impVorlage);
           }
+        }
+      }
+
+      // Mark local templates missing from import payload as soft-deleted
+      for (const [localId, localVorlage] of localVorlagenMap.entries()) {
+        if (!importVorlagenIds.has(localId) && !localVorlage.geloescht) {
+          await db.vorlagen.update(localId, {
+            geloescht: true,
+            geaendertAm: new Date().toISOString()
+          });
         }
       }
 

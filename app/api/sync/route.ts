@@ -24,13 +24,13 @@ export async function POST(req: Request) {
     }
 
     const key = `klisten:sync:${roomHash}`;
-    const res = await fetch(`${url}/set/${key}`, {
+    const res = await fetch(url, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(encryptedData),
+      body: JSON.stringify(['SET', key, encryptedData]),
     });
 
     if (!res.ok) {
@@ -61,10 +61,13 @@ export async function GET(req: Request) {
     }
 
     const key = `klisten:sync:${roomHash}`;
-    const res = await fetch(`${url}/get/${key}`, {
+    const res = await fetch(url, {
+      method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
       },
+      body: JSON.stringify(['GET', key]),
     });
 
     if (!res.ok) {
