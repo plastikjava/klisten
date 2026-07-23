@@ -43,7 +43,16 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   const peerRef = useRef<Peer | null>(null);
   const connectionRef = useRef<DataConnection | null>(null);
   const retryTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const isBroadcastingRef = useRef(false);
+  
+  // Track status ref for async callbacks
+  const statusRef = useRef<SyncStatus>(status);
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
+
+  // Flag to prevent loop bounces when receiving data from remote peer
+  const isReceivingRemoteSyncRef = useRef(false);
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Load configuration from localStorage
   useEffect(() => {
@@ -62,6 +71,10 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       clearInterval(retryTimerRef.current);
       retryTimerRef.current = null;
     }
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
     if (connectionRef.current) {
       connectionRef.current.close();
       connectionRef.current = null;
@@ -78,7 +91,6 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     if (!connectionRef.current || connectionRef.current.open === false) return;
 
     try {
-      isBroadcastingRef.current = true;
       const kinder = await db.kinder.toArray();
       const vorlagen = await db.vorlagen.toArray();
       const aktivitaetsLog = await db.aktivitaetsLog.toArray();
@@ -89,12 +101,9 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
         vorlagen,
         aktivitaetsLog,
       });
+      console.log(`WebRTC payload sent (${type}): ${kinder.length} kinder, ${vorlagen.length} vorlagen.`);
     } catch (err) {
       console.error('Failed to send payload over WebRTC:', err);
-    } finally {
-      setTimeout(() => {
-        isBroadcastingRef.current = false;
-      }, 500);
     }
   }, []);
 
@@ -119,6 +128,8 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
         if (!incoming || typeof incoming !== 'object') return;
 
         try {
+          // Flag remote sync active so Dexie hooks don't bounce the packet back
+          isReceivingRemoteSyncRef.current = true;
           const { type, kinder, vorlagen, aktivitaetsLog } = incoming;
           if (type === 'sync') {
             await datenZusammenfuehren(kinder || [], vorlagen || [], aktivitaetsLog || []);
@@ -128,6 +139,11 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
           }
         } catch (err) {
           console.error('Failed to process incoming WebRTC sync payload:', err);
+        } finally {
+          // Reset remote sync flag after write completes
+          setTimeout(() => {
+            isReceivingRemoteSyncRef.current = false;
+          }, 300);
         }
       });
 
@@ -209,9 +225,18 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   // Hook into Dexie DB changes to broadcast edits in real-time when connected
   useEffect(() => {
     const notifyChange = () => {
-      if (status === 'connected' && !isBroadcastingRef.current) {
-        sendPayload('sync');
+      // Ignore DB writes caused by incoming remote sync packets
+      if (isReceivingRemoteSyncRef.current) return;
+
+      // Debounce and defer execution until AFTER local DB transaction commits
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
       }
+      debounceTimerRef.current = setTimeout(() => {
+        if (statusRef.current === 'connected' && connectionRef.current?.open) {
+          sendPayload('sync');
+        }
+      }, 400);
     };
 
     db.kinder.hook('creating', notifyChange);
@@ -231,7 +256,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       db.vorlagen.hook('deleting').unsubscribe(notifyChange);
       db.aktivitaetsLog.hook('creating').unsubscribe(notifyChange);
     };
-  }, [status, sendPayload]);
+  }, [sendPayload]);
 
   const saveSettings = (newRoom: string, newRole: '1' | '2', newAuto: boolean) => {
     localStorage.setItem('klisten_sync_room', newRoom.trim());
