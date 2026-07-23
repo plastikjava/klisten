@@ -10,21 +10,21 @@ interface DatenSicherungProps {
   onClose: () => void;
 }
 
-type Tab = 'file' | 'p2p';
+type Tab = 'file' | 'cloud';
 
 export default function DatenSicherung({ isOpen, onClose }: DatenSicherungProps) {
   const { showToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
+
   const {
     status,
     roomName: contextRoom,
-    deviceRole: contextRole,
     autoSync: contextAuto,
     errorMsg: contextError,
     saveSettings,
-    triggerSync,
-    connectP2P,
+    triggerPush,
+    triggerPull,
+    triggerOverwriteRemote,
   } = useSync();
 
   // Tab control
@@ -37,17 +37,15 @@ export default function DatenSicherung({ isOpen, onClose }: DatenSicherungProps)
 
   // Form states for sync settings
   const [roomNameInput, setRoomNameInput] = useState('');
-  const [deviceRoleInput, setDeviceRoleInput] = useState<'1' | '2'>('1');
   const [autoSyncInput, setAutoSyncInput] = useState(true);
 
   // Initialize input state from context
   useEffect(() => {
     if (isOpen) {
       setRoomNameInput(contextRoom);
-      setDeviceRoleInput(contextRole);
       setAutoSyncInput(contextAuto);
     }
-  }, [isOpen, contextRoom, contextRole, contextAuto]);
+  }, [isOpen, contextRoom, contextAuto]);
 
   // --- FILE BACKUP HANDLERS ---
   const handleExport = async () => {
@@ -109,35 +107,20 @@ export default function DatenSicherung({ isOpen, onClose }: DatenSicherungProps)
       showToast('Bitte gib ein Kita-Codewort an.', 'error');
       return;
     }
-    saveSettings(roomNameInput, deviceRoleInput, autoSyncInput);
-    showToast('Sync-Einstellungen gespeichert! Verbindung wird hergestellt...', 'success');
-    connectP2P();
-  };
-
-  const handleTriggerSyncNow = async (type: 'sync' | 'overwrite') => {
-    try {
-      await triggerSync(type);
-      showToast(
-        type === 'sync'
-          ? 'Daten erfolgreich mit dem anderen iPad abgeglichen!'
-          : 'Anderes iPad erfolgreich überschrieben!',
-        'success'
-      );
-    } catch (err: any) {
-      showToast(err.message || 'Fehler beim Abgleich.', 'error');
-    }
+    saveSettings(roomNameInput, autoSyncInput);
+    showToast('Sync-Einstellungen gespeichert!', 'success');
   };
 
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 no-print animate-in fade-in duration-200">
-      <div className="bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-100 animate-in zoom-in-95 duration-200">
+      <div className="bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-100 animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
         
         {/* Modal Header */}
-        <div className="bg-[#4A90D9] p-6 text-white flex justify-between items-center">
+        <div className="bg-[#4A90D9] p-5 text-white flex justify-between items-center shrink-0">
           <h2 className="text-xl font-bold flex items-center gap-2">
-            💾 Datensicherung & iPad-Sync
+            💾 Datensicherung & Cloud-Sync
           </h2>
           <button 
             onClick={onClose} 
@@ -150,7 +133,7 @@ export default function DatenSicherung({ isOpen, onClose }: DatenSicherungProps)
 
         {/* Navigation Tabs */}
         {!confirmOverwrite && (
-          <div className="flex border-b border-slate-100 bg-slate-50/50">
+          <div className="flex border-b border-slate-100 bg-slate-50/50 shrink-0">
             <button
               onClick={() => setActiveTab('file')}
               className={`flex-1 py-3 text-sm font-bold transition focus:outline-none ${
@@ -162,20 +145,20 @@ export default function DatenSicherung({ isOpen, onClose }: DatenSicherungProps)
               📄 Dateisicherung
             </button>
             <button
-              onClick={() => setActiveTab('p2p')}
+              onClick={() => setActiveTab('cloud')}
               className={`flex-1 py-3 text-sm font-bold transition focus:outline-none ${
-                activeTab === 'p2p'
+                activeTab === 'cloud'
                   ? 'border-b-2 border-purple-600 text-purple-600 bg-white'
                   : 'text-slate-500 hover:text-slate-700'
               }`}
             >
-              🔄 Automatische iPad-Synchronisation
+              ☁️ Ende-zu-Ende Cloud-Sync
             </button>
           </div>
         )}
 
         {/* Modal Body */}
-        <div className="p-6 space-y-6">
+        <div className="p-6 space-y-6 overflow-y-auto flex-1">
           {confirmOverwrite ? (
             // Overwrite Danger Box (For file import)
             <div className="bg-rose-50 border border-rose-200 p-5 rounded-xl space-y-4">
@@ -209,8 +192,8 @@ export default function DatenSicherung({ isOpen, onClose }: DatenSicherungProps)
             // --- FILE BACKUP TAB ---
             <>
               <p className="text-slate-600 text-sm leading-relaxed">
-                Da alle Kinderdaten ausschließlich lokal auf diesem Gerät gespeichert sind (kein Server, keine Cloud), 
-                solltest du regelmäßig ein Backup deiner Daten erstellen.
+                Da alle Kinderdaten lokal auf diesem Gerät gespeichert sind, 
+                kannst du jederzeit ein manuelles Backup deiner Daten als JSON-Datei erstellen.
               </p>
 
               <div className="bg-[#FAFAF5] p-5 rounded-xl border border-slate-200/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -249,52 +232,76 @@ export default function DatenSicherung({ isOpen, onClose }: DatenSicherungProps)
               </div>
             </>
           ) : (
-            // --- AUTOMATIC P2P WLAN SYNC TAB ---
+            // --- ENCRYPTED CLOUD SYNC TAB ---
             <div className="space-y-5">
               
-              {/* Connection Status Box */}
+              {/* Status Banner */}
               <div className="p-4 rounded-2xl border flex items-center justify-between gap-4 bg-slate-50 border-slate-200">
                 <div className="flex items-center gap-3">
                   {status === 'connected' && <span className="text-2xl">🟢</span>}
-                  {status === 'connecting' && <span className="text-2xl animate-spin">⏳</span>}
+                  {status === 'syncing' && <span className="text-2xl animate-spin">⏳</span>}
                   {status === 'disconnected' && <span className="text-2xl">⚪</span>}
-                  {status === 'error' && <span className="text-2xl">🔴</span>}
+                  {status === 'kv_missing' && <span className="text-2xl">🔴</span>}
+                  {status === 'error' && <span className="text-2xl">⚠️</span>}
 
                   <div>
                     <h4 className="font-bold text-slate-800 text-sm">
-                      {status === 'connected' && 'Verbunden mit anderem iPad!'}
-                      {status === 'connecting' && 'Verbindung wird aufgebaut...'}
-                      {status === 'disconnected' && 'Nicht verbunden'}
-                      {status === 'error' && 'Verbindungsfehler'}
+                      {status === 'connected' && 'Ende-zu-Ende Sync aktiv'}
+                      {status === 'syncing' && 'Synchronisiere mit Cloud...'}
+                      {status === 'disconnected' && 'Inaktiv (Bitte Codewort festlegen)'}
+                      {status === 'kv_missing' && 'Vercel KV Datenbank fehlt'}
+                      {status === 'error' && 'Sync-Fehler'}
                     </h4>
                     <p className="text-xs text-slate-500">
-                      {status === 'connected' && 'Änderungen werden in Echtzeit synchronisiert.'}
-                      {status === 'connecting' && 'Sucht das zweite iPad im WLAN...'}
-                      {status === 'disconnected' && 'Bitte erstelle Einstellungen unten.'}
-                      {status === 'error' && (contextError || 'Signaling-Server nicht erreichbar.')}
+                      {status === 'connected' && 'Daten werden auf dem iPad verschlüsselt (AES-256).'}
+                      {status === 'syncing' && 'Daten werden hoch- oder heruntergeladen...'}
+                      {status === 'disconnected' && 'Gib unten dein Kita-Codewort ein.'}
+                      {status === 'kv_missing' && 'Verbinde Upstash/KV unter Storage in Vercel.'}
+                      {status === 'error' && (contextError || 'Fehler aufgetreten.')}
                     </p>
                   </div>
                 </div>
 
                 {status === 'connected' && (
-                  <button
-                    onClick={() => handleTriggerSyncNow('sync')}
-                    className="py-2 px-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-xs transition shrink-0 shadow-sm"
-                  >
-                    🔄 Jetzt abgleichen
-                  </button>
+                  <div className="flex flex-col gap-1.5 shrink-0">
+                    <button
+                      onClick={triggerPull}
+                      className="py-1.5 px-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg text-xs transition shadow-sm"
+                    >
+                      📥 Jetzt abrufen
+                    </button>
+                  </div>
                 )}
               </div>
 
+              {/* Vercel KV Missing Help Box */}
+              {status === 'kv_missing' && (
+                <div className="bg-rose-50 border border-rose-200 p-4 rounded-2xl space-y-2 text-xs text-rose-800">
+                  <h4 className="font-bold text-sm text-rose-900 flex items-center gap-1.5">
+                    ⚙️ Anweisung: Vercel KV aktivieren (Einmalig 1 Minute)
+                  </h4>
+                  <ol className="list-decimal list-inside space-y-1 leading-relaxed">
+                    <li>Öffne dein Vercel Dashboard auf <strong>vercel.com</strong>.</li>
+                    <li>Klicke auf dein Projekt <strong>Kita-Listen</strong>.</li>
+                    <li>Gehe oben auf den Reiter <strong>Storage</strong>.</li>
+                    <li>Klicke auf <strong>Create Database</strong> -&gt; wähle <strong>KV</strong> (oder Upstash Redis).</li>
+                    <li>Klicke auf <strong>Connect to Project</strong>. Fertig!</li>
+                  </ol>
+                </div>
+              )}
+
               {/* Form Settings */}
               <form onSubmit={handleSaveSyncSettings} className="space-y-4 bg-purple-50/40 p-5 rounded-2xl border border-purple-100/50">
-                <h3 className="text-sm font-bold text-purple-900 uppercase tracking-wider">
-                  Sync-Konfiguration
+                <h3 className="text-sm font-bold text-purple-900 uppercase tracking-wider flex items-center justify-between">
+                  <span>Cloud-Konfiguration</span>
+                  <span className="text-[10px] bg-purple-200/60 text-purple-800 font-extrabold px-2 py-0.5 rounded-full">
+                    🔒 AES-256 E2EE
+                  </span>
                 </h3>
 
                 <div className="space-y-1.5">
                   <label htmlFor="p2pRoomInput" className="block text-xs font-bold text-slate-700">
-                    Kita-Codewort (eindeutiger Schlüssel) *
+                    Kita-Codewort (Passwort für Verschlüsselung) *
                   </label>
                   <input
                     type="text"
@@ -302,39 +309,11 @@ export default function DatenSicherung({ isOpen, onClose }: DatenSicherungProps)
                     value={roomNameInput}
                     onChange={(e) => setRoomNameInput(e.target.value)}
                     placeholder="z.B. kita-sonnenschein-2026"
-                    className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-600/30 transition"
+                    className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-600/30 transition font-mono"
                   />
-                  <p className="text-[11px] text-slate-400">Beide iPads müssen exakt dasselbe Codewort eingetragen haben.</p>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="block text-xs font-bold text-slate-700">
-                    Dieses iPad ist:
-                  </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setDeviceRoleInput('1')}
-                      className={`p-2.5 rounded-xl text-xs font-bold transition focus:outline-none border ${
-                        deviceRoleInput === '1'
-                          ? 'bg-purple-600 border-purple-600 text-white shadow-sm'
-                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                      }`}
-                    >
-                      Gerät 1
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setDeviceRoleInput('2')}
-                      className={`p-2.5 rounded-xl text-xs font-bold transition focus:outline-none border ${
-                        deviceRoleInput === '2'
-                          ? 'bg-purple-600 border-purple-600 text-white shadow-sm'
-                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                      }`}
-                    >
-                      Gerät 2
-                    </button>
-                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    Mit diesem Codewort werden alle Kinderdaten auf dem iPad unlesbar verschlüsselt. Alle Geräte müssen exakt dasselbe Codewort nutzen.
+                  </p>
                 </div>
 
                 <div className="flex items-center gap-2 pt-1">
@@ -346,7 +325,7 @@ export default function DatenSicherung({ isOpen, onClose }: DatenSicherungProps)
                     className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500/50 border-slate-300"
                   />
                   <label htmlFor="autoSyncInput" className="text-xs font-bold text-slate-700 cursor-pointer">
-                    Automatischen WLAN-Sync im Hintergrund aktivieren
+                    Automatischen Cloud-Sync beim App-Start & Änderungen aktivieren
                   </label>
                 </div>
 
@@ -354,22 +333,29 @@ export default function DatenSicherung({ isOpen, onClose }: DatenSicherungProps)
                   type="submit"
                   className="w-full py-3 px-4 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-sm transition focus:outline-none shadow-sm"
                 >
-                  💾 Einstellungen speichern & verbinden
+                  💾 Codewort speichern & verbinden
                 </button>
               </form>
 
-              {/* Master Overwrite Options */}
+              {/* Manual Cloud Actions */}
               {status === 'connected' && (
-                <div className="pt-2 border-t border-slate-100 flex justify-end">
+                <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                  <button
+                    onClick={triggerPush}
+                    className="text-xs text-purple-600 hover:text-purple-800 font-bold"
+                  >
+                    📤 Daten jetzt manuell in Cloud hochladen
+                  </button>
+
                   <button
                     onClick={() => {
-                      if (window.confirm('Das andere iPad wird komplett mit den Daten dieses Geräts überschrieben. Fortfahren?')) {
-                        handleTriggerSyncNow('overwrite');
+                      if (window.confirm('Der Stand in der Cloud wird komplett mit den Daten dieses Geräts überschrieben. Fortfahren?')) {
+                        triggerOverwriteRemote();
                       }
                     }}
-                    className="text-xs text-slate-500 hover:text-rose-600 font-semibold"
+                    className="text-xs text-slate-400 hover:text-rose-600 font-semibold"
                   >
-                    📤 Master-Reset: Das andere iPad komplett überschreiben
+                    Reset Cloud
                   </button>
                 </div>
               )}
@@ -379,7 +365,7 @@ export default function DatenSicherung({ isOpen, onClose }: DatenSicherungProps)
         </div>
 
         {/* Modal Footer */}
-        <div className="bg-slate-50 p-4 border-t border-slate-100 flex justify-end">
+        <div className="bg-slate-50 p-4 border-t border-slate-100 flex justify-end shrink-0">
           <button
             onClick={onClose}
             disabled={isImporting}

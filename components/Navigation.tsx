@@ -33,21 +33,28 @@ export default function Navigation() {
         return (
           <span className="inline-flex items-center gap-1 text-xs bg-emerald-500/20 text-emerald-100 border border-emerald-400/30 px-2 py-1 rounded-lg font-bold">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span className="hidden lg:inline">iPad-Sync aktiv</span>
+            <span className="hidden lg:inline">Cloud-Sync aktiv</span>
           </span>
         );
-      case 'connecting':
+      case 'syncing':
         return (
           <span className="inline-flex items-center gap-1 text-xs bg-amber-500/20 text-amber-100 border border-amber-400/30 px-2 py-1 rounded-lg font-bold">
             <span className="w-2 h-2 rounded-full bg-amber-300 animate-ping"></span>
-            <span className="hidden lg:inline">iPad-Sync sucht...</span>
+            <span className="hidden lg:inline">Cloud-Sync prüft...</span>
+          </span>
+        );
+      case 'kv_missing':
+        return (
+          <span className="inline-flex items-center gap-1 text-xs bg-rose-500/20 text-rose-100 border border-rose-400/30 px-2 py-1 rounded-lg font-bold">
+            <span className="w-2 h-2 rounded-full bg-rose-400"></span>
+            <span className="hidden lg:inline">Sync-DB verbinden</span>
           </span>
         );
       case 'error':
         return (
           <span className="inline-flex items-center gap-1 text-xs bg-rose-500/20 text-rose-100 border border-rose-400/30 px-2 py-1 rounded-lg font-bold">
             <span className="w-2 h-2 rounded-full bg-rose-400"></span>
-            <span className="hidden lg:inline">iPad-Sync Fehler</span>
+            <span className="hidden lg:inline">Sync Fehler</span>
           </span>
         );
       default:

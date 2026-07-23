@@ -1,23 +1,22 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
-import type { Peer, DataConnection } from 'peerjs';
 import { db } from '@/lib/db';
 import { datenZusammenfuehren, datenUeberschreiben } from '@/lib/db-operations';
+import { encryptPayload, decryptPayload, getRoomHash } from '@/lib/encryption';
 import { useToast } from './Toast';
 
-type SyncStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
+export type SyncStatus = 'disconnected' | 'syncing' | 'connected' | 'error' | 'kv_missing';
 
 interface SyncContextType {
   status: SyncStatus;
   roomName: string;
-  deviceRole: '1' | '2';
   autoSync: boolean;
   errorMsg: string;
-  saveSettings: (roomName: string, role: '1' | '2', autoSync: boolean) => void;
-  triggerSync: (type?: 'sync' | 'overwrite') => Promise<void>;
-  disconnectP2P: () => void;
-  connectP2P: () => void;
+  saveSettings: (roomName: string, autoSync: boolean) => void;
+  triggerPush: () => Promise<void>;
+  triggerPull: () => Promise<void>;
+  triggerOverwriteRemote: () => Promise<void>;
 }
 
 const SyncContext = createContext<SyncContextType | null>(null);
@@ -34,209 +33,167 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   const { showToast } = useToast();
 
   const [roomName, setRoomName] = useState('');
-  const [deviceRole, setDeviceRole] = useState<'1' | '2'>('1');
   const [autoSync, setAutoSync] = useState(true);
 
   const [status, setStatus] = useState<SyncStatus>('disconnected');
   const [errorMsg, setErrorMsg] = useState('');
 
-  const peerRef = useRef<Peer | null>(null);
-  const connectionRef = useRef<DataConnection | null>(null);
-  const retryTimerRef = useRef<NodeJS.Timeout | null>(null);
-  
-  // Track status ref for async callbacks
-  const statusRef = useRef<SyncStatus>(status);
-  useEffect(() => {
-    statusRef.current = status;
-  }, [status]);
+  // Flag to prevent loop bounces when applying remote data
+  const isApplyingRemoteSyncRef = useRef(false);
+  const debouncePushRef = useRef<NodeJS.Timeout | null>(null);
+  const lastUploadedHashRef = useRef<string>('');
 
-  // Flag to prevent loop bounces when receiving data from remote peer
-  const isReceivingRemoteSyncRef = useRef(false);
-  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Load configuration from localStorage
+  // Load settings from localStorage
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const savedRoom = localStorage.getItem('klisten_sync_room') || '';
-      const savedRole = (localStorage.getItem('klisten_sync_role') as '1' | '2') || '1';
       const savedAuto = localStorage.getItem('klisten_sync_auto') !== 'false';
       setRoomName(savedRoom);
-      setDeviceRole(savedRole);
       setAutoSync(savedAuto);
     }
   }, []);
 
-  const cleanup = useCallback(() => {
-    if (retryTimerRef.current) {
-      clearInterval(retryTimerRef.current);
-      retryTimerRef.current = null;
-    }
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-      debounceTimerRef.current = null;
-    }
-    if (connectionRef.current) {
-      connectionRef.current.close();
-      connectionRef.current = null;
-    }
-    if (peerRef.current) {
-      peerRef.current.destroy();
-      peerRef.current = null;
-    }
-    setStatus('disconnected');
-  }, []);
-
-  // Send local payload to peer
-  const sendPayload = useCallback(async (type: 'sync' | 'overwrite' = 'sync') => {
-    if (!connectionRef.current || connectionRef.current.open === false) return;
+  // Upload local database encrypted to Cloud Storage
+  const pushToCloud = useCallback(async () => {
+    if (!roomName.trim()) return;
 
     try {
+      const roomHash = await getRoomHash(roomName);
       const kinder = await db.kinder.toArray();
       const vorlagen = await db.vorlagen.toArray();
       const aktivitaetsLog = await db.aktivitaetsLog.toArray();
 
-      connectionRef.current.send({
-        type,
-        kinder,
-        vorlagen,
-        aktivitaetsLog,
+      const payload = { kinder, vorlagen, aktivitaetsLog };
+      const encryptedData = await encryptPayload(payload, roomName);
+
+      // Avoid re-uploading identical state
+      if (encryptedData === lastUploadedHashRef.current) return;
+
+      const res = await fetch('/api/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomHash, encryptedData }),
       });
-      console.log(`WebRTC payload sent (${type}): ${kinder.length} kinder, ${vorlagen.length} vorlagen.`);
-    } catch (err) {
-      console.error('Failed to send payload over WebRTC:', err);
+
+      if (res.status === 503) {
+        setStatus('kv_missing');
+        setErrorMsg('Vercel KV Datenbank ist noch nicht in Vercel verbunden.');
+        return;
+      }
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Upload fehlgeschlagen');
+      }
+
+      lastUploadedHashRef.current = encryptedData;
+      setStatus('connected');
+      setErrorMsg('');
+    } catch (err: any) {
+      console.error('Push to Cloud Sync failed:', err);
+      setStatus('error');
+      setErrorMsg(err.message || 'Sync-Upload fehlgeschlagen');
     }
-  }, []);
+  }, [roomName]);
 
-  // Setup WebRTC Data Connection
-  const setupDataConnection = useCallback(
-    (conn: DataConnection) => {
-      conn.on('open', () => {
-        console.log('PeerJS data connection opened!');
-        if (retryTimerRef.current) {
-          clearInterval(retryTimerRef.current);
-          retryTimerRef.current = null;
-        }
-        connectionRef.current = conn;
-        setStatus('connected');
-        showToast('WLAN-Verbindung mit dem zweiten iPad hergestellt!', 'success');
-
-        // Immediately trigger initial bidirectional sync on connection
-        sendPayload('sync');
-      });
-
-      conn.on('data', async (incoming: any) => {
-        if (!incoming || typeof incoming !== 'object') return;
-
-        try {
-          // Flag remote sync active so Dexie hooks don't bounce the packet back
-          isReceivingRemoteSyncRef.current = true;
-          const { type, kinder, vorlagen, aktivitaetsLog } = incoming;
-          if (type === 'sync') {
-            await datenZusammenfuehren(kinder || [], vorlagen || [], aktivitaetsLog || []);
-          } else if (type === 'overwrite') {
-            await datenUeberschreiben(kinder || [], vorlagen || [], aktivitaetsLog || []);
-            showToast('Daten vom Master-iPad übernommen!', 'success');
-          }
-        } catch (err) {
-          console.error('Failed to process incoming WebRTC sync payload:', err);
-        } finally {
-          // Reset remote sync flag after write completes
-          setTimeout(() => {
-            isReceivingRemoteSyncRef.current = false;
-          }, 300);
-        }
-      });
-
-      conn.on('close', () => {
-        console.log('PeerJS data connection closed');
-        connectionRef.current = null;
-        setStatus('disconnected');
-      });
-
-      conn.on('error', (err) => {
-        console.error('PeerJS connection error:', err);
-        connectionRef.current = null;
-        setStatus('disconnected');
-      });
-    },
-    [sendPayload, showToast]
-  );
-
-  // Initialize P2P Connection
-  const connectP2P = useCallback(async () => {
+  // Download latest encrypted database from Cloud Storage & Merge
+  const pullFromCloud = useCallback(async () => {
     if (!roomName.trim()) return;
 
-    cleanup();
-    setStatus('connecting');
-    setErrorMsg('');
-
-    const cleanRoom = roomName.toLowerCase().replace(/[^a-z0-9]/g, '');
-    const myPeerId = `klisten-${cleanRoom}-${deviceRole}`;
-    const targetPeerId = `klisten-${cleanRoom}-${deviceRole === '1' ? '2' : '1'}`;
-
     try {
-      const { Peer } = await import('peerjs');
-      const newPeer = new Peer(myPeerId, { debug: 1 });
+      setStatus('syncing');
+      const roomHash = await getRoomHash(roomName);
+      const res = await fetch(`/api/sync?roomHash=${roomHash}`);
 
-      newPeer.on('open', (id) => {
-        console.log('PeerJS registered with ID:', id);
+      if (res.status === 503) {
+        setStatus('kv_missing');
+        setErrorMsg('Vercel KV Datenbank ist noch nicht in Vercel verbunden.');
+        return;
+      }
 
-        // Attempt to connect to the target peer periodically until connected
-        retryTimerRef.current = setInterval(() => {
-          if (newPeer.destroyed || connectionRef.current?.open) return;
-          console.log(`Searching for target peer: ${targetPeerId}...`);
-          const conn = newPeer.connect(targetPeerId, { serialization: 'json' });
-          setupDataConnection(conn);
-        }, 4000);
-      });
+      if (!res.ok) {
+        setStatus('connected');
+        return;
+      }
 
-      newPeer.on('connection', (conn) => {
-        console.log('Incoming PeerJS connection accepted!');
-        setupDataConnection(conn);
-      });
+      const { encryptedData } = await res.json();
+      if (!encryptedData) {
+        // No remote data yet -> upload local initial state
+        await pushToCloud();
+        setStatus('connected');
+        return;
+      }
 
-      newPeer.on('error', (err) => {
-        console.error('PeerJS global error:', err);
-        setErrorMsg('Signaling-Server nicht erreichbar.');
+      // If we just uploaded this exact blob, skip decrypting & writing to DB
+      if (encryptedData === lastUploadedHashRef.current) {
+        setStatus('connected');
+        return;
+      }
+
+      isApplyingRemoteSyncRef.current = true;
+      try {
+        const remoteData = await decryptPayload(encryptedData, roomName);
+        const { kinder, vorlagen, aktivitaetsLog } = remoteData;
+
+        await datenZusammenfuehren(kinder || [], vorlagen || [], aktivitaetsLog || []);
+        lastUploadedHashRef.current = encryptedData;
+        setStatus('connected');
+        setErrorMsg('');
+      } catch (decryptErr) {
+        console.error('Decryption failed:', decryptErr);
         setStatus('error');
-        cleanup();
-      });
-
-      peerRef.current = newPeer;
-    } catch (err) {
-      console.error('PeerJS initialization error:', err);
-      setErrorMsg('Sync-Modul konnte nicht geladen werden.');
+        setErrorMsg('Entschlüsselung fehlgeschlagen. Bitte prüfe das Kita-Codewort.');
+      } finally {
+        setTimeout(() => {
+          isApplyingRemoteSyncRef.current = false;
+        }, 500);
+      }
+    } catch (err: any) {
+      console.error('Pull from Cloud Sync failed:', err);
       setStatus('error');
+      setErrorMsg(err.message || 'Sync-Abruf fehlgeschlagen');
     }
-  }, [roomName, deviceRole, cleanup, setupDataConnection]);
+  }, [roomName, pushToCloud]);
 
-  // Automatically connect on mount or when settings change
+  // Auto-sync effect: pull on mount, tab focus, or room change
   useEffect(() => {
-    if (autoSync && roomName.trim()) {
-      connectP2P();
-    } else {
-      cleanup();
+    if (!autoSync || !roomName.trim()) {
+      setStatus('disconnected');
+      return;
     }
-    return () => {
-      cleanup();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomName, deviceRole, autoSync]);
 
-  // Hook into Dexie DB changes to broadcast edits in real-time when connected
+    // Pull immediately on startup
+    pullFromCloud();
+
+    // Pull when user opens/unlocks the iPad screen (window focus)
+    const handleFocus = () => {
+      pullFromCloud();
+    };
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('visibilitychange', handleFocus);
+
+    // Periodic check every 25 seconds
+    const intervalId = setInterval(() => {
+      pullFromCloud();
+    }, 25000);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('visibilitychange', handleFocus);
+      clearInterval(intervalId);
+    };
+  }, [roomName, autoSync, pullFromCloud]);
+
+  // Hook into Dexie DB changes to automatically push changes to cloud
   useEffect(() => {
     const notifyChange = () => {
-      // Ignore DB writes caused by incoming remote sync packets
-      if (isReceivingRemoteSyncRef.current) return;
+      if (isApplyingRemoteSyncRef.current || !autoSync || !roomName.trim()) return;
 
-      // Debounce and defer execution until AFTER local DB transaction commits
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
+      if (debouncePushRef.current) {
+        clearTimeout(debouncePushRef.current);
       }
-      debounceTimerRef.current = setTimeout(() => {
-        if (statusRef.current === 'connected' && connectionRef.current?.open) {
-          sendPayload('sync');
-        }
+      debouncePushRef.current = setTimeout(() => {
+        pushToCloud();
       }, 400);
     };
 
@@ -257,23 +214,32 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       db.vorlagen.hook('deleting').unsubscribe(notifyChange);
       db.aktivitaetsLog.hook('creating').unsubscribe(notifyChange);
     };
-  }, [sendPayload]);
+  }, [roomName, autoSync, pushToCloud]);
 
-  const saveSettings = (newRoom: string, newRole: '1' | '2', newAuto: boolean) => {
-    localStorage.setItem('klisten_sync_room', newRoom.trim());
-    localStorage.setItem('klisten_sync_role', newRole);
+  const saveSettings = (newRoom: string, newAuto: boolean) => {
+    const cleanRoom = newRoom.trim();
+    localStorage.setItem('klisten_sync_room', cleanRoom);
     localStorage.setItem('klisten_sync_auto', String(newAuto));
 
-    setRoomName(newRoom.trim());
-    setDeviceRole(newRole);
+    setRoomName(cleanRoom);
     setAutoSync(newAuto);
+    lastUploadedHashRef.current = '';
   };
 
-  const triggerSync = async (type: 'sync' | 'overwrite' = 'sync') => {
-    if (status !== 'connected') {
-      throw new Error('Keine aktive WLAN-Verbindung vorhanden.');
-    }
-    await sendPayload(type);
+  const triggerPush = async () => {
+    await pushToCloud();
+    showToast('Daten erfolgreich verschlüsselt in die Cloud hochgeladen!', 'success');
+  };
+
+  const triggerPull = async () => {
+    await pullFromCloud();
+    showToast('Neueste Daten erfolgreich heruntergeladen und synchronisiert!', 'success');
+  };
+
+  const triggerOverwriteRemote = async () => {
+    lastUploadedHashRef.current = '';
+    await pushToCloud();
+    showToast('Cloud-Stand erfolgreich mit den Daten dieses iPads überschrieben!', 'success');
   };
 
   return (
@@ -281,13 +247,12 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       value={{
         status,
         roomName,
-        deviceRole,
         autoSync,
         errorMsg,
         saveSettings,
-        triggerSync,
-        disconnectP2P: cleanup,
-        connectP2P,
+        triggerPush,
+        triggerPull,
+        triggerOverwriteRemote,
       }}
     >
       {children}
