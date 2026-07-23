@@ -292,12 +292,12 @@ export default function VorlageDruckenDialog({
         @media print {
           @page {
             size: A4 portrait;
-            margin: 5mm 8mm;
+            margin: 8mm 10mm;
           }
           html, body {
             background: #ffffff !important;
             color: #000000 !important;
-            font-size: 9pt !important;
+            font-size: 9.5pt !important;
           }
           .no-print {
             display: none !important;
@@ -313,18 +313,19 @@ export default function VorlageDruckenDialog({
           .print-clean-page table {
             width: 100% !important;
             border-collapse: collapse !important;
-            font-size: 8.5pt !important;
+            font-size: 9.5pt !important;
           }
           .print-clean-page th {
-            padding: 3px 4px !important;
-            font-size: 8.5pt !important;
+            padding: 4px 6px !important;
+            font-size: 9.5pt !important;
             background-color: #f1f5f9 !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
           .print-clean-page td {
-            padding: 2px 4px !important;
-            font-size: 8.5pt !important;
+            padding: 3px 6px !important;
+            font-size: 9.5pt !important;
+            height: 26px !important;
           }
         }
       `}</style>
