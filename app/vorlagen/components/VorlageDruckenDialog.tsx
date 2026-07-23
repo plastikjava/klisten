@@ -292,11 +292,12 @@ export default function VorlageDruckenDialog({
         @media print {
           @page {
             size: A4 portrait;
-            margin: 6mm 8mm;
+            margin: 5mm 8mm;
           }
-          body {
+          html, body {
             background: #ffffff !important;
             color: #000000 !important;
+            font-size: 9pt !important;
           }
           .no-print {
             display: none !important;
@@ -306,6 +307,24 @@ export default function VorlageDruckenDialog({
             width: 100% !important;
             margin: 0 !important;
             padding: 0 !important;
+            page-break-after: avoid !important;
+            page-break-inside: avoid !important;
+          }
+          .print-clean-page table {
+            width: 100% !important;
+            border-collapse: collapse !important;
+            font-size: 8.5pt !important;
+          }
+          .print-clean-page th {
+            padding: 3px 4px !important;
+            font-size: 8.5pt !important;
+            background-color: #f1f5f9 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          .print-clean-page td {
+            padding: 2px 4px !important;
+            font-size: 8.5pt !important;
           }
         }
       `}</style>
@@ -313,30 +332,30 @@ export default function VorlageDruckenDialog({
       <div className="hidden print-clean-page w-full text-black bg-white select-none">
         
         {/* Compact Single-Page Header */}
-        <div className="flex justify-between items-end border-b-2 border-black pb-2 mb-3">
+        <div className="flex justify-between items-end border-b-2 border-black pb-1.5 mb-2">
           <div>
-            <h1 className="text-xl font-bold tracking-tight text-black">{vorlage.name}</h1>
+            <h1 className="text-lg font-bold tracking-tight text-black">{vorlage.name}</h1>
             {vorlage.beschreibung && (
-              <p className="text-[10px] text-slate-700 italic">{vorlage.beschreibung}</p>
+              <p className="text-[9px] text-slate-700 italic">{vorlage.beschreibung}</p>
             )}
           </div>
-          <div className="text-right text-[10px] text-slate-700">
+          <div className="text-right text-[9px] text-slate-700">
             <span className="font-bold">Anzahl: {listKinder.length} Kinder</span> &bull; <span>Datum: {heuteStr}</span>
           </div>
         </div>
 
         {/* Compact Single-Page Printable Table */}
-        <table className="w-full border-collapse text-[10pt] leading-tight">
+        <table className="w-full border-collapse leading-tight">
           <thead>
-            <tr className="bg-slate-100 border border-slate-800">
-              <th className="border border-slate-700 py-1.5 px-2 text-center w-8 font-bold">#</th>
-              <th className="border border-slate-700 py-1.5 px-2 text-left font-bold">Name</th>
-              <th className="border border-slate-700 py-1.5 px-2 text-left w-24 font-bold">Gruppe</th>
-              <th className="border border-slate-700 py-1.5 px-2 text-left w-24 font-bold">Alter</th>
+            <tr className="border border-slate-800">
+              <th className="border border-slate-700 text-center w-7 font-bold">#</th>
+              <th className="border border-slate-700 text-left font-bold">Name</th>
+              <th className="border border-slate-700 text-left w-24 font-bold">Gruppe</th>
+              <th className="border border-slate-700 text-left w-20 font-bold">Alter</th>
 
               {/* Dynamic Empty Columns */}
               {Array.from({ length: emptyColumnsCount }).map((_, idx) => (
-                <th key={idx} className="border border-slate-700 py-1.5 px-1 text-center font-bold min-w-[3.5rem]">
+                <th key={idx} className="border border-slate-700 text-center font-bold min-w-[3.2rem]">
                   {columnHeaders[idx]?.trim() ? columnHeaders[idx].trim() : '\u00A0'}
                 </th>
               ))}
@@ -345,22 +364,22 @@ export default function VorlageDruckenDialog({
           <tbody>
             {listKinder.map((kind, idx) => (
               <tr key={kind.id} className="border-b border-slate-400">
-                <td className="border border-slate-700 py-1 px-2 text-center font-semibold text-slate-600">
+                <td className="border border-slate-700 text-center font-semibold text-slate-600">
                   {idx + 1}
                 </td>
-                <td className="border border-slate-700 py-1 px-2 text-left font-bold text-slate-900">
+                <td className="border border-slate-700 text-left font-bold text-slate-900">
                   {kind.vorname}
                 </td>
-                <td className="border border-slate-700 py-1 px-2 text-left text-slate-800">
+                <td className="border border-slate-700 text-left text-slate-800">
                   {kind.gruppe}
                 </td>
-                <td className="border border-slate-700 py-1 px-2 text-left text-slate-800 whitespace-nowrap">
+                <td className="border border-slate-700 text-left text-slate-800 whitespace-nowrap">
                   {formatierteAltersAngabe(kind.geburtsdatum)}
                 </td>
 
                 {/* Empty cells for handwriting / checkmarks */}
                 {Array.from({ length: emptyColumnsCount }).map((_, colIdx) => (
-                  <td key={colIdx} className="border border-slate-700 py-1 px-1 text-center min-w-[3.2rem]">
+                  <td key={colIdx} className="border border-slate-700 text-center min-w-[3.2rem]">
                     &nbsp;
                   </td>
                 ))}
@@ -370,7 +389,7 @@ export default function VorlageDruckenDialog({
         </table>
 
         {/* Compact Footer */}
-        <div className="mt-3 text-[9pt] text-slate-500 flex justify-between items-center border-t border-slate-300 pt-1">
+        <div className="mt-2 text-[8.5pt] text-slate-500 flex justify-between items-center border-t border-slate-300 pt-1">
           <span>Kita-Listen App</span>
           <span>Seite 1 von 1</span>
         </div>
