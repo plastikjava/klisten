@@ -41,7 +41,9 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   // Flag to prevent loop bounces when applying remote data
   const isApplyingRemoteSyncRef = useRef(false);
   const debouncePushRef = useRef<NodeJS.Timeout | null>(null);
-  const lastUploadedHashRef = useRef<string>('');
+  
+  // Track JSON content hash to avoid re-uploading or re-processing identical states
+  const lastContentHashRef = useRef<string>('');
 
   // Load settings from localStorage
   useEffect(() => {
@@ -64,13 +66,15 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       const aktivitaetsLog = await db.aktivitaetsLog.toArray();
 
       const payload = { kinder, vorlagen, aktivitaetsLog };
-      const encryptedData = await encryptPayload(payload, roomName);
+      const currentContentHash = JSON.stringify(payload);
 
-      // Avoid re-uploading identical state
-      if (encryptedData === lastUploadedHashRef.current) {
+      // Avoid re-uploading identical database content
+      if (currentContentHash === lastContentHashRef.current) {
         setStatus('connected');
         return;
       }
+
+      const encryptedData = await encryptPayload(payload, roomName);
 
       const res = await fetch('/api/sync', {
         method: 'POST',
@@ -89,7 +93,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
         throw new Error(errJson.error || 'Upload fehlgeschlagen');
       }
 
-      lastUploadedHashRef.current = encryptedData;
+      lastContentHashRef.current = currentContentHash;
       setStatus('connected');
       setErrorMsg('');
     } catch (err: any) {
@@ -126,24 +130,33 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      // If we just uploaded this exact blob, skip decrypting & writing to DB
-      if (encryptedData === lastUploadedHashRef.current) {
-        setStatus('connected');
-        return;
-      }
-
       isApplyingRemoteSyncRef.current = true;
       try {
         const remoteData = await decryptPayload(encryptedData, roomName);
         const { kinder, vorlagen, aktivitaetsLog } = remoteData;
+        const remotePayload = { kinder: kinder || [], vorlagen: vorlagen || [], aktivitaetsLog: aktivitaetsLog || [] };
+        const remoteContentHash = JSON.stringify(remotePayload);
+
+        // Skip applying if remote database content is identical to our current local state
+        if (remoteContentHash === lastContentHashRef.current) {
+          setStatus('connected');
+          return;
+        }
 
         await datenZusammenfuehren(kinder || [], vorlagen || [], aktivitaetsLog || []);
-        lastUploadedHashRef.current = encryptedData;
+        
+        // Re-read local DB to update our local content hash
+        const freshKinder = await db.kinder.toArray();
+        const freshVorlagen = await db.vorlagen.toArray();
+        const freshLogs = await db.aktivitaetsLog.toArray();
+        lastContentHashRef.current = JSON.stringify({ kinder: freshKinder, vorlagen: freshVorlagen, aktivitaetsLog: freshLogs });
+
         setStatus('connected');
         setErrorMsg('');
       } catch (decryptErr) {
-        console.warn('Decryption failed on remote cloud data (corrupted or incompatible test payload). Auto-repairing by pushing fresh local state.', decryptErr);
-        // Self-healing: Overwrite incompatible/corrupted cloud data with fresh local state
+        console.warn('Decryption failed on remote cloud data. Overwriting remote state with fresh local data.', decryptErr);
+        // Overwrite corrupted/incompatible remote payload with fresh local state
+        lastContentHashRef.current = '';
         await pushToCloud();
       } finally {
         setTimeout(() => {
@@ -157,7 +170,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     }
   }, [roomName, pushToCloud]);
 
-  // Auto-sync effect: pull on mount, tab focus, or room change
+  // Auto-sync effect: pull on mount, tab focus, or room change with 4-second polling
   useEffect(() => {
     if (!autoSync || !roomName.trim()) {
       setStatus('disconnected');
@@ -167,17 +180,17 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     // Pull immediately on startup
     pullFromCloud();
 
-    // Pull when user opens/unlocks the iPad screen (window focus)
+    // Pull when user opens/unlocks the iPad screen (window focus / visibility)
     const handleFocus = () => {
       pullFromCloud();
     };
     window.addEventListener('focus', handleFocus);
     window.addEventListener('visibilitychange', handleFocus);
 
-    // Periodic check every 25 seconds
+    // Fast periodic check every 4 seconds for near real-time sync across devices
     const intervalId = setInterval(() => {
       pullFromCloud();
-    }, 25000);
+    }, 4000);
 
     return () => {
       window.removeEventListener('focus', handleFocus);
@@ -225,21 +238,23 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
 
     setRoomName(cleanRoom);
     setAutoSync(newAuto);
-    lastUploadedHashRef.current = '';
+    lastContentHashRef.current = '';
   };
 
   const triggerPush = async () => {
+    lastContentHashRef.current = '';
     await pushToCloud();
     showToast('Daten erfolgreich verschlüsselt in die Cloud hochgeladen!', 'success');
   };
 
   const triggerPull = async () => {
+    lastContentHashRef.current = '';
     await pullFromCloud();
     showToast('Neueste Daten erfolgreich heruntergeladen und synchronisiert!', 'success');
   };
 
   const triggerOverwriteRemote = async () => {
-    lastUploadedHashRef.current = '';
+    lastContentHashRef.current = '';
     await pushToCloud();
     showToast('Cloud-Stand erfolgreich mit den Daten dieses iPads überschrieben!', 'success');
   };

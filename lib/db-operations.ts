@@ -257,7 +257,7 @@ export async function datenZusammenfuehren(
           await db.kinder.add(impKind);
         } else {
           const localTime = local.geaendertAm || '1970-01-01T00:00:00.000Z';
-          if (impTime > localTime) {
+          if (impTime >= localTime) {
             await db.kinder.put(impKind);
           }
         }
@@ -274,7 +274,7 @@ export async function datenZusammenfuehren(
           await db.vorlagen.add(impVorlage);
         } else {
           const localTime = local.geaendertAm || '1970-01-01T00:00:00.000Z';
-          if (impTime > localTime) {
+          if (impTime >= localTime) {
             await db.vorlagen.put(impVorlage);
           }
         }
