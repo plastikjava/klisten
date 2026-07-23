@@ -338,7 +338,7 @@ export default function VorlageDruckenDialog({
               {/* Dynamic Empty Columns */}
               {Array.from({ length: emptyColumnsCount }).map((_, idx) => (
                 <th key={idx} className="border border-slate-700 py-1.5 px-1 text-center font-bold min-w-[3.2rem]">
-                  {columnHeaders[idx]?.trim() || `Datum:`}
+                  {columnHeaders[idx]?.trim() ? columnHeaders[idx].trim() : '\u00A0'}
                 </th>
               ))}
             </tr>

@@ -154,7 +154,7 @@ export default function VorlagenPage() {
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-200">
+    <div className="space-y-6 animate-in fade-in duration-200 no-print">
       
       {/* Page Header */}
       <div className="select-none flex flex-col md:flex-row md:items-center justify-between gap-4">
