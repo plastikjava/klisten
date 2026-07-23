@@ -4,7 +4,7 @@ import React, { useState, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/lib/db';
 import { Listenvorlage, Kind } from '@/types';
-import { formatierteAltersAngabe } from '@/lib/alter';
+import { berechneAlter, formatierteAltersAngabe } from '@/lib/alter';
 import { kinderFiltern } from '@/lib/listengenerator';
 
 interface VorlageDruckenDialogProps {
@@ -12,6 +12,8 @@ interface VorlageDruckenDialogProps {
   onClose: () => void;
   vorlage: Listenvorlage | null;
 }
+
+type SortOption = 'name_asc' | 'alter_asc' | 'alter_desc' | 'gruppe';
 
 export default function VorlageDruckenDialog({
   isOpen,
@@ -21,11 +23,14 @@ export default function VorlageDruckenDialog({
   // Query all active kids
   const allKinder = useLiveQuery(() => db.kinder.filter((k) => !k.geloescht).toArray()) || [];
 
-  // Stepper state for empty columns (default 4 columns for checkboxes/notes)
+  // Dialog Controls
   const [emptyColumnsCount, setEmptyColumnsCount] = useState<number>(4);
-  
-  // Custom column headers array (e.g. ["Datum:", "Datum:", ...])
   const [columnHeaders, setColumnHeaders] = useState<string[]>(['', '', '', '']);
+  const [sortBy, setSortBy] = useState<SortOption>('name_asc');
+  
+  // Optional Age Filter inside print dialog
+  const [alterVon, setAlterVon] = useState<number | undefined>(undefined);
+  const [alterBis, setAlterBis] = useState<number | undefined>(undefined);
 
   // Update headers array length when count changes
   const handleCountChange = (newCount: number) => {
@@ -52,23 +57,46 @@ export default function VorlageDruckenDialog({
     });
   };
 
-  // Get kids for this template
+  // Filter and sort kids for this printable list
   const listKinder = useMemo(() => {
     if (!vorlage) return [];
 
-    let result: Kind[] = [];
+    let basePool: Kind[] = [];
     if (vorlage.istStatisch && vorlage.kinderIds) {
       const set = new Set(vorlage.kinderIds);
-      result = allKinder.filter((k) => set.has(k.id));
+      basePool = allKinder.filter((k) => set.has(k.id));
     } else if (vorlage.filterOptionen) {
-      result = kinderFiltern(allKinder, vorlage.filterOptionen);
+      basePool = kinderFiltern(allKinder, vorlage.filterOptionen);
     } else {
-      result = [...allKinder];
+      basePool = [...allKinder];
     }
 
-    // Sort alphabetically by name
-    return result.sort((a, b) => a.vorname.localeCompare(b.vorname, 'de'));
-  }, [vorlage, allKinder]);
+    // Apply optional Age Filter if set in dialog
+    let filtered = basePool.filter((kind) => {
+      const alter = berechneAlter(kind.geburtsdatum);
+      if (alterVon !== undefined && alter < alterVon) return false;
+      if (alterBis !== undefined && alter > alterBis) return false;
+      return true;
+    });
+
+    // Apply Sorting
+    return filtered.sort((a, b) => {
+      if (sortBy === 'name_asc') {
+        return a.vorname.localeCompare(b.vorname, 'de');
+      } else if (sortBy === 'alter_asc') {
+        // Youngest first (later birthdate = younger)
+        return b.geburtsdatum.localeCompare(a.geburtsdatum);
+      } else if (sortBy === 'alter_desc') {
+        // Oldest first (earlier birthdate = older)
+        return a.geburtsdatum.localeCompare(b.geburtsdatum);
+      } else if (sortBy === 'gruppe') {
+        const comp = a.gruppe.localeCompare(b.gruppe, 'de');
+        if (comp !== 0) return comp;
+        return a.vorname.localeCompare(b.vorname, 'de');
+      }
+      return 0;
+    });
+  }, [vorlage, allKinder, alterVon, alterBis, sortBy]);
 
   if (!isOpen || !vorlage) return null;
 
@@ -86,7 +114,7 @@ export default function VorlageDruckenDialog({
     <>
       {/* Modal Dialog for Configuration (Hidden during printing) */}
       <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 no-print animate-in fade-in duration-200">
-        <div className="bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-100 animate-in zoom-in-95 duration-200 select-none flex flex-col max-h-[90vh]">
+        <div className="bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-100 animate-in zoom-in-95 duration-200 select-none flex flex-col max-h-[92vh]">
           
           {/* Header */}
           <div className="bg-purple-600 p-5 text-white flex justify-between items-center shrink-0">
@@ -102,24 +130,92 @@ export default function VorlageDruckenDialog({
             </button>
           </div>
 
-          {/* Form Options */}
-          <div className="p-6 space-y-6 overflow-y-auto flex-1">
+          {/* Options Content */}
+          <div className="p-6 space-y-5 overflow-y-auto flex-1 text-sm">
             
             {/* Info summary */}
-            <div className="bg-purple-50/50 p-4 rounded-2xl border border-purple-100 text-sm text-purple-900 flex justify-between items-center">
+            <div className="bg-purple-50/50 p-3.5 rounded-2xl border border-purple-100 text-purple-900 flex justify-between items-center">
               <div>
-                <span className="font-bold block">{vorlage.name}</span>
+                <span className="font-bold block text-base">{vorlage.name}</span>
                 <span className="text-xs text-purple-700">
-                  {listKinder.length} {listKinder.length === 1 ? 'Kind' : 'Kinder'} in dieser Liste
+                  {listKinder.length} {listKinder.length === 1 ? 'Kind' : 'Kinder'} ausgewählt
                 </span>
               </div>
               <span className="text-2xl">📋</span>
             </div>
 
+            {/* Sort Selection */}
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                Sortierung der Liste
+              </label>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as SortOption)}
+                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-purple-600/30 transition"
+              >
+                <option value="name_asc">🔤 Alphabetisch nach Vorname (A-Z)</option>
+                <option value="alter_asc">👶 Nach Alter: Jüngste zuerst</option>
+                <option value="alter_desc">🧒 Nach Alter: Älteste zuerst</option>
+                <option value="gruppe">👥 Nach Gruppen sortieren</option>
+              </select>
+            </div>
+
+            {/* Age Filter inside Print Dialog */}
+            <div className="space-y-1.5 pt-2 border-t border-slate-100">
+              <div className="flex justify-between items-center">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  Alters-Einschränkung <span className="text-slate-400 font-normal lowercase">(optional)</span>
+                </label>
+                {(alterVon !== undefined || alterBis !== undefined) && (
+                  <button
+                    type="button"
+                    onClick={() => { setAlterVon(undefined); setAlterBis(undefined); }}
+                    className="text-xs text-rose-500 font-bold hover:underline"
+                  >
+                    Zurücksetzen
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label htmlFor="printAlterVon" className="block text-xs text-slate-500 mb-1 font-semibold">Alter von (Jahren):</label>
+                  <select
+                    id="printAlterVon"
+                    value={alterVon ?? ''}
+                    onChange={(e) => setAlterVon(e.target.value ? Number(e.target.value) : undefined)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-purple-600/30"
+                  >
+                    <option value="">Alle Altersstufen</option>
+                    <option value="3">Ab 3 Jahren</option>
+                    <option value="4">Ab 4 Jahren</option>
+                    <option value="5">Ab 5 Jahren</option>
+                    <option value="6">Ab 6 Jahren</option>
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="printAlterBis" className="block text-xs text-slate-500 mb-1 font-semibold">Alter bis (Jahren):</label>
+                  <select
+                    id="printAlterBis"
+                    value={alterBis ?? ''}
+                    onChange={(e) => setAlterBis(e.target.value ? Number(e.target.value) : undefined)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-purple-600/30"
+                  >
+                    <option value="">Alle Altersstufen</option>
+                    <option value="3">Bis 3 Jahre</option>
+                    <option value="4">Bis 4 Jahre</option>
+                    <option value="5">Bis 5 Jahre</option>
+                    <option value="6">Bis 6 Jahre</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
             {/* Stepper: Empty Columns Count */}
-            <div className="space-y-2">
-              <label className="block text-sm font-bold text-slate-700">
-                Anzahl leere Spalten (zum Ankreuzen / Eintragen)
+            <div className="space-y-2 pt-2 border-t border-slate-100">
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                Anzahl leere Spalten (zum Ankreuzen)
               </label>
               
               <div className="flex items-center gap-3">
@@ -127,30 +223,27 @@ export default function VorlageDruckenDialog({
                   type="button"
                   onClick={() => handleCountChange(emptyColumnsCount - 1)}
                   disabled={emptyColumnsCount <= 0}
-                  className="w-12 h-12 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold rounded-2xl text-2xl transition focus:outline-none disabled:opacity-40 flex items-center justify-center"
+                  className="w-11 h-11 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold rounded-2xl text-2xl transition focus:outline-none disabled:opacity-40 flex items-center justify-center"
                 >
                   -
                 </button>
-                <div className="flex-1 bg-slate-50 border border-slate-200 rounded-2xl py-2.5 text-center font-black text-xl text-purple-600">
+                <div className="flex-1 bg-slate-50 border border-slate-200 rounded-2xl py-2 text-center font-black text-lg text-purple-600">
                   {emptyColumnsCount} {emptyColumnsCount === 1 ? 'Spalte' : 'Spalten'}
                 </div>
                 <button
                   type="button"
                   onClick={() => handleCountChange(emptyColumnsCount + 1)}
-                  disabled={emptyColumnsCount >= 10}
-                  className="w-12 h-12 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold rounded-2xl text-2xl transition focus:outline-none disabled:opacity-40 flex items-center justify-center"
+                  disabled={emptyColumnsCount >= 8}
+                  className="w-11 h-11 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold rounded-2xl text-2xl transition focus:outline-none disabled:opacity-40 flex items-center justify-center"
                 >
                   +
                 </button>
               </div>
-              <p className="text-xs text-slate-400">
-                Fügt leere Tabellenspalten für Daten, Haken oder Unterschriften hinzu.
-              </p>
             </div>
 
             {/* Optional Header Labels for Empty Columns */}
             {emptyColumnsCount > 0 && (
-              <div className="space-y-2.5 pt-2 border-t border-slate-100">
+              <div className="space-y-2 pt-1">
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
                   Spaltenüberschriften <span className="text-slate-400 font-normal lowercase">(optional)</span>
                 </label>
@@ -184,7 +277,8 @@ export default function VorlageDruckenDialog({
             <button
               type="button"
               onClick={handlePrint}
-              className="py-3 px-6 bg-purple-600 hover:bg-purple-700 text-white font-extrabold rounded-2xl shadow-md transition text-sm focus:outline-none flex items-center gap-2"
+              disabled={listKinder.length === 0}
+              className="py-3 px-6 bg-purple-600 hover:bg-purple-700 text-white font-extrabold rounded-2xl shadow-md transition text-sm focus:outline-none flex items-center gap-2 disabled:opacity-50"
             >
               🖨️ Jetzt drucken
             </button>
@@ -193,66 +287,84 @@ export default function VorlageDruckenDialog({
         </div>
       </div>
 
-      {/* --- PRINTABLE HTML TABLE (Rendered only during window.print()) --- */}
-      <div className="hidden print:block w-full text-black bg-white print-container p-4 select-none">
+      {/* --- PRINTABLE SINGLE A4 PAGE TABLE (Rendered only during window.print()) --- */}
+      <style jsx global>{`
+        @media print {
+          @page {
+            size: A4 portrait;
+            margin: 6mm 8mm;
+          }
+          body {
+            background: #ffffff !important;
+            color: #000000 !important;
+          }
+          .no-print {
+            display: none !important;
+          }
+          .print-clean-page {
+            display: block !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+          }
+        }
+      `}</style>
+
+      <div className="hidden print-clean-page w-full text-black bg-white select-none">
         
-        {/* Printable Header */}
-        <div className="flex justify-between items-end border-b-2 border-slate-800 pb-3">
+        {/* Compact Single-Page Header */}
+        <div className="flex justify-between items-end border-b-2 border-black pb-2 mb-3">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900">{vorlage.name}</h1>
+            <h1 className="text-xl font-bold tracking-tight text-black">{vorlage.name}</h1>
             {vorlage.beschreibung && (
-              <p className="text-xs text-slate-600 mt-0.5 italic">{vorlage.beschreibung}</p>
+              <p className="text-[10px] text-slate-700 italic">{vorlage.beschreibung}</p>
             )}
-            <p className="text-xs text-slate-500 mt-1 font-semibold">
-              Gesamt: {listKinder.length} Kinder
-            </p>
           </div>
-          <div className="text-right">
-            <p className="text-sm font-bold text-slate-800">Kita-Listen</p>
-            <p className="text-xs text-slate-500">Datum: {heuteStr}</p>
+          <div className="text-right text-[10px] text-slate-700">
+            <span className="font-bold">Anzahl: {listKinder.length} Kinder</span> &bull; <span>Datum: {heuteStr}</span>
           </div>
         </div>
 
-        {/* Printable Table */}
-        <table className="w-full mt-4 border-collapse text-xs">
+        {/* Compact Single-Page Printable Table */}
+        <table className="w-full border-collapse text-[10pt] leading-tight">
           <thead>
-            <tr className="bg-slate-100 border border-slate-400">
-              <th className="border border-slate-400 p-2 text-center w-10 font-bold">#</th>
-              <th className="border border-slate-400 p-2 text-left font-bold">Name</th>
-              <th className="border border-slate-400 p-2 text-left w-24 font-bold">Gruppe</th>
-              <th className="border border-slate-400 p-2 text-left w-24 font-bold">Alter</th>
-              <th className="border border-slate-400 p-2 text-left font-bold">Besonderheiten</th>
+            <tr className="bg-slate-100 border border-slate-800">
+              <th className="border border-slate-700 py-1.5 px-2 text-center w-8 font-bold">#</th>
+              <th className="border border-slate-700 py-1.5 px-2 text-left font-bold">Name</th>
+              <th className="border border-slate-700 py-1.5 px-2 text-left w-20 font-bold">Gruppe</th>
+              <th className="border border-slate-700 py-1.5 px-2 text-left w-20 font-bold">Alter</th>
+              <th className="border border-slate-700 py-1.5 px-2 text-left font-bold">Besonderheiten</th>
 
               {/* Dynamic Empty Columns */}
               {Array.from({ length: emptyColumnsCount }).map((_, idx) => (
-                <th key={idx} className="border border-slate-400 p-2 text-center font-bold min-w-[3.5rem]">
-                  {columnHeaders[idx]?.trim() || `Datum: _____`}
+                <th key={idx} className="border border-slate-700 py-1.5 px-1 text-center font-bold min-w-[3.2rem]">
+                  {columnHeaders[idx]?.trim() || `Datum:`}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
             {listKinder.map((kind, idx) => (
-              <tr key={kind.id} className="border-b border-slate-300">
-                <td className="border border-slate-400 p-2 text-center font-semibold text-slate-500">
+              <tr key={kind.id} className="border-b border-slate-400">
+                <td className="border border-slate-700 py-1 px-2 text-center font-semibold text-slate-600">
                   {idx + 1}
                 </td>
-                <td className="border border-slate-400 p-2 text-left font-bold text-slate-900">
+                <td className="border border-slate-700 py-1 px-2 text-left font-bold text-slate-900">
                   {kind.vorname}
                 </td>
-                <td className="border border-slate-400 p-2 text-left text-slate-700">
+                <td className="border border-slate-700 py-1 px-2 text-left text-slate-800">
                   {kind.gruppe}
                 </td>
-                <td className="border border-slate-400 p-2 text-left text-slate-700 whitespace-nowrap">
+                <td className="border border-slate-700 py-1 px-2 text-left text-slate-800 whitespace-nowrap">
                   {formatierteAltersAngabe(kind.geburtsdatum)}
                 </td>
-                <td className="border border-slate-400 p-2 text-left text-slate-600 italic">
+                <td className="border border-slate-700 py-1 px-2 text-left text-slate-700 italic">
                   {kind.besonderheiten || ''}
                 </td>
 
                 {/* Empty cells for handwriting / checkmarks */}
                 {Array.from({ length: emptyColumnsCount }).map((_, colIdx) => (
-                  <td key={colIdx} className="border border-slate-400 p-2 text-center min-w-[3.5rem]">
+                  <td key={colIdx} className="border border-slate-700 py-1 px-1 text-center min-w-[3.2rem]">
                     &nbsp;
                   </td>
                 ))}
@@ -261,10 +373,10 @@ export default function VorlageDruckenDialog({
           </tbody>
         </table>
 
-        {/* Printable Footer */}
-        <div className="mt-6 text-center text-[10px] text-slate-400 border-t border-slate-200 pt-2 flex justify-between items-center">
+        {/* Compact Footer */}
+        <div className="mt-3 text-[9pt] text-slate-500 flex justify-between items-center border-t border-slate-300 pt-1">
           <span>Kita-Listen App</span>
-          <span>Erstellt am: {heuteStr}</span>
+          <span>Seite 1 von 1</span>
         </div>
 
       </div>

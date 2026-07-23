@@ -57,10 +57,10 @@ function ListenPageContent() {
         setLoadedFromParam(true);
         
         if (found.istStatisch) {
-          // Static list flow: load members directly and skip to Phase 2 (selection)
+          // Static list flow: load members as base pool and open Phase 1 for filter configuration
           const pool = allKinder.filter((k) => found.kinderIds?.includes(k.id));
           setGefiltertePool(pool);
-          setPhase('auswahl');
+          setPhase('filter');
         } else if (found.filterOptionen) {
           // Dynamic template flow
           setFilter(found.filterOptionen);
@@ -97,10 +97,10 @@ function ListenPageContent() {
     
     if (v) {
       if (v.istStatisch) {
-        // Static list flow: load members directly and skip to Phase 2
+        // Static list flow: load members as base pool and open Phase 1 for filter configuration
         const pool = allKinder.filter((k) => v.kinderIds?.includes(k.id));
         setGefiltertePool(pool);
-        setPhase('auswahl');
+        setPhase('filter');
       } else if (v.filterOptionen) {
         // Dynamic template flow
         setFilter(v.filterOptionen);
@@ -182,7 +182,14 @@ function ListenPageContent() {
       return;
     }
 
-    const gefilterte = kinderFiltern(allKinder, filter);
+    let gefilterte: Kind[] = [];
+    if (aktiveVorlage?.istStatisch && aktiveVorlage.kinderIds) {
+      const set = new Set(aktiveVorlage.kinderIds);
+      const basePool = allKinder.filter((k) => set.has(k.id));
+      gefilterte = kinderFiltern(basePool, filter);
+    } else {
+      gefilterte = kinderFiltern(allKinder, filter);
+    }
     
     if (gefilterte.length === 0) {
       setGefiltertePool([]);
@@ -340,7 +347,20 @@ function ListenPageContent() {
         
         {/* Phase 1: Filter Panel */}
         {phase === 'filter' && (
-          <div className="no-print">
+          <div className="no-print space-y-4">
+            {aktiveVorlage?.istStatisch && (
+              <div className="bg-purple-50 border border-purple-200 p-4 rounded-2xl flex items-center justify-between gap-3 text-purple-900 select-none">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">👥</span>
+                  <div>
+                    <h3 className="font-bold text-base">Feste Gruppe geladen: {aktiveVorlage.name}</h3>
+                    <p className="text-xs text-purple-700">
+                      Du filterst innerhalb der {aktiveVorlage.kinderIds?.length || 0} festen Mitglieder dieser Gruppe. Passe unten Alter, Anzahl oder Sortierung an.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
             <FilterPanel
               gruppen={gruppen}
               filter={filter}
