@@ -64,8 +64,9 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       const kinder = await db.kinder.toArray();
       const vorlagen = await db.vorlagen.toArray();
       const aktivitaetsLog = await db.aktivitaetsLog.toArray();
+      const anwesenheit = await db.anwesenheit.toArray();
 
-      const payload = { kinder, vorlagen, aktivitaetsLog };
+      const payload = { kinder, vorlagen, aktivitaetsLog, anwesenheit };
       const currentContentHash = JSON.stringify(payload);
 
       // Avoid re-uploading identical database content
@@ -133,8 +134,13 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       isApplyingRemoteSyncRef.current = true;
       try {
         const remoteData = await decryptPayload(encryptedData, roomName);
-        const { kinder, vorlagen, aktivitaetsLog } = remoteData;
-        const remotePayload = { kinder: kinder || [], vorlagen: vorlagen || [], aktivitaetsLog: aktivitaetsLog || [] };
+        const { kinder, vorlagen, aktivitaetsLog, anwesenheit } = remoteData;
+        const remotePayload = { 
+          kinder: kinder || [], 
+          vorlagen: vorlagen || [], 
+          aktivitaetsLog: aktivitaetsLog || [],
+          anwesenheit: anwesenheit || []
+        };
         const remoteContentHash = JSON.stringify(remotePayload);
 
         // Skip applying if remote database content is identical to our current local state
@@ -143,13 +149,19 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
           return;
         }
 
-        await datenZusammenfuehren(kinder || [], vorlagen || [], aktivitaetsLog || []);
+        await datenZusammenfuehren(kinder || [], vorlagen || [], aktivitaetsLog || [], anwesenheit || []);
         
         // Re-read local DB to update our local content hash
         const freshKinder = await db.kinder.toArray();
         const freshVorlagen = await db.vorlagen.toArray();
         const freshLogs = await db.aktivitaetsLog.toArray();
-        lastContentHashRef.current = JSON.stringify({ kinder: freshKinder, vorlagen: freshVorlagen, aktivitaetsLog: freshLogs });
+        const freshAnw = await db.anwesenheit.toArray();
+        lastContentHashRef.current = JSON.stringify({ 
+          kinder: freshKinder, 
+          vorlagen: freshVorlagen, 
+          aktivitaetsLog: freshLogs,
+          anwesenheit: freshAnw
+        });
 
         setStatus('connected');
         setErrorMsg('');
@@ -226,6 +238,9 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     db.vorlagen.hook('updating', notifyChange);
     db.vorlagen.hook('deleting', notifyChange);
     db.aktivitaetsLog.hook('creating', notifyChange);
+    db.anwesenheit.hook('creating', notifyChange);
+    db.anwesenheit.hook('updating', notifyChange);
+    db.anwesenheit.hook('deleting', notifyChange);
 
     return () => {
       db.kinder.hook('creating').unsubscribe(notifyChange);
@@ -235,6 +250,9 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       db.vorlagen.hook('updating').unsubscribe(notifyChange);
       db.vorlagen.hook('deleting').unsubscribe(notifyChange);
       db.aktivitaetsLog.hook('creating').unsubscribe(notifyChange);
+      db.anwesenheit.hook('creating').unsubscribe(notifyChange);
+      db.anwesenheit.hook('updating').unsubscribe(notifyChange);
+      db.anwesenheit.hook('deleting').unsubscribe(notifyChange);
     };
   }, [roomName, autoSync, pushToCloud]);
 

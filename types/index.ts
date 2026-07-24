@@ -1,3 +1,8 @@
+export interface Notfallkontakt {
+  name?: string; // z.B. "Mama", "Papa", "Oma"
+  telefon: string;
+}
+
 export interface Kind {
   id: string; // UUID
   vorname: string;
@@ -5,6 +10,7 @@ export interface Kind {
   gruppe: string;
   letzteAktivitaetAm?: string; // ISO-Datum YYYY-MM-DD, für Rotationslogik
   besonderheiten?: string; // optionales Freitextfeld (z.B. Allergien)
+  notfallkontakte?: Notfallkontakt[]; // Max 3 Telefonnummern, passwortgeschützt (PW 1248)
   geaendertAm: string; // ISO-Datum der letzten Änderung, für P2P-Sync
   geloescht?: boolean; // Soft Delete Marker (Tombstone für P2P-Sync)
 }
@@ -36,4 +42,15 @@ export interface AktivitaetsLog {
   kindId: string; // ID des Kindes
   datum: string; // ISO-Datum YYYY-MM-DD, wann die Aktivität stattfand
   geaendertAm: string; // ISO-Datum der letzten Änderung, für P2P-Sync
+}
+
+export type AnwesenheitsStatus = 'anwesend' | 'fehlt' | 'krank' | 'urlaub';
+
+export interface AnwesenheitsEintrag {
+  id: string; // `${datum}_${kindId}`
+  kindId: string;
+  datum: string; // YYYY-MM-DD
+  status: AnwesenheitsStatus;
+  notiz?: string;
+  geaendertAm: string;
 }

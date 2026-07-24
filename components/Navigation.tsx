@@ -19,7 +19,7 @@ export default function Navigation() {
   };
 
   const navLinkClass = (path: string) => {
-    const base = "px-3 py-2 md:px-4 md:py-2.5 rounded-xl font-bold transition text-sm md:text-base lg:text-lg flex items-center gap-1.5 focus:outline-none";
+    const base = "px-2.5 py-1.5 md:px-3 md:py-2 rounded-xl font-bold transition text-xs md:text-sm flex items-center gap-1 focus:outline-none shrink-0";
     if (isActive(path)) {
       return `${base} bg-white text-[#4A90D9] shadow-sm`;
     }
@@ -31,30 +31,30 @@ export default function Navigation() {
     switch (status) {
       case 'connected':
         return (
-          <span className="inline-flex items-center gap-1 text-xs bg-emerald-500/20 text-emerald-100 border border-emerald-400/30 px-2 py-1 rounded-lg font-bold">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span className="hidden lg:inline">Cloud-Sync aktiv</span>
+          <span className="inline-flex items-center gap-1 text-[10px] bg-emerald-500/20 text-emerald-100 border border-emerald-400/30 px-1.5 py-0.5 rounded-md font-bold">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span className="hidden xl:inline">Sync aktiv</span>
           </span>
         );
       case 'syncing':
         return (
-          <span className="inline-flex items-center gap-1 text-xs bg-amber-500/20 text-amber-100 border border-amber-400/30 px-2 py-1 rounded-lg font-bold">
-            <span className="w-2 h-2 rounded-full bg-amber-300 animate-ping"></span>
-            <span className="hidden lg:inline">Cloud-Sync prüft...</span>
+          <span className="inline-flex items-center gap-1 text-[10px] bg-amber-500/20 text-amber-100 border border-amber-400/30 px-1.5 py-0.5 rounded-md font-bold">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-300 animate-ping"></span>
+            <span className="hidden xl:inline">Sync...</span>
           </span>
         );
       case 'kv_missing':
         return (
-          <span className="inline-flex items-center gap-1 text-xs bg-rose-500/20 text-rose-100 border border-rose-400/30 px-2 py-1 rounded-lg font-bold">
-            <span className="w-2 h-2 rounded-full bg-rose-400"></span>
-            <span className="hidden lg:inline">Sync-DB verbinden</span>
+          <span className="inline-flex items-center gap-1 text-[10px] bg-rose-500/20 text-rose-100 border border-rose-400/30 px-1.5 py-0.5 rounded-md font-bold">
+            <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+            <span className="hidden xl:inline">Sync-DB?</span>
           </span>
         );
       case 'error':
         return (
-          <span className="inline-flex items-center gap-1 text-xs bg-rose-500/20 text-rose-100 border border-rose-400/30 px-2 py-1 rounded-lg font-bold">
-            <span className="w-2 h-2 rounded-full bg-rose-400"></span>
-            <span className="hidden lg:inline">Sync Fehler</span>
+          <span className="inline-flex items-center gap-1 text-[10px] bg-rose-500/20 text-rose-100 border border-rose-400/30 px-1.5 py-0.5 rounded-md font-bold">
+            <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+            <span className="hidden xl:inline">Sync Fehler</span>
           </span>
         );
       default:
@@ -64,31 +64,44 @@ export default function Navigation() {
 
   return (
     <>
-      <header className="bg-[#4A90D9] text-white py-4 px-4 md:px-8 shadow-md no-print sticky top-0 z-40 select-none">
-        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+      <header className="bg-[#4A90D9] text-white py-3 px-3 md:px-6 shadow-md no-print sticky top-0 z-40 select-none">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3">
           
           {/* Logo / Title */}
-          <Link href="/" className="flex items-center gap-2 text-2xl font-black tracking-tight hover:opacity-95 transition">
-            <span className="text-3xl" role="img" aria-label="Children logo">🧒</span>
+          <Link href="/" className="flex items-center gap-2 text-xl md:text-2xl font-black tracking-tight hover:opacity-95 transition shrink-0">
+            <span className="text-2xl md:text-3xl" role="img" aria-label="Children logo">🧒</span>
             <span>Kita-Listen</span>
           </Link>
 
           {/* Navigation Links */}
-          <nav className="flex flex-wrap items-center justify-center gap-1.5">
+          <nav className="flex flex-wrap items-center justify-center gap-1 overflow-x-auto max-w-full">
             <Link href="/kinder" className={navLinkClass('/kinder')}>
-              🧒 <span className="hidden sm:inline">Kinder</span>
+              🧒 <span>Kinder</span>
+            </Link>
+            <Link href="/anwesenheit" className={navLinkClass('/anwesenheit')}>
+              📋 <span>Anwesenheit</span>
             </Link>
             <Link href="/vorlagen" className={navLinkClass('/vorlagen')}>
-              📚 <span className="hidden sm:inline">Vorlagen</span>
+              📚 <span>Vorlagen</span>
             </Link>
             <Link href="/listen" className={navLinkClass('/listen')}>
-              📋 <span className="hidden sm:inline">Liste erstellen</span><span className="sm:hidden">Listen</span>
+              ⚡ <span>Listen</span>
             </Link>
+            <Link href="/geburtstage" className={navLinkClass('/geburtstage')}>
+              🎂 <span>Geburtstage</span>
+            </Link>
+            <Link href="/statistiken" className={navLinkClass('/statistiken')}>
+              📊 <span>Statistiken</span>
+            </Link>
+            <Link href="/infozettel" className={navLinkClass('/infozettel')}>
+              ✉️ <span>Info-Zettel</span>
+            </Link>
+
             <button
               onClick={() => setIsBackupOpen(true)}
-              className="px-3 py-2 md:px-4 md:py-2.5 rounded-xl font-bold transition text-sm md:text-base lg:text-lg text-white/90 hover:text-white hover:bg-white/10 flex items-center gap-1.5 focus:outline-none"
+              className="px-2.5 py-1.5 md:px-3 md:py-2 rounded-xl font-bold transition text-xs md:text-sm text-white/90 hover:text-white hover:bg-white/10 flex items-center gap-1 focus:outline-none shrink-0"
             >
-              💾 <span className="hidden sm:inline">Datensicherung</span><span className="sm:hidden">Backup</span>
+              💾 <span>Backup</span>
               {getSyncBadge()}
             </button>
           </nav>

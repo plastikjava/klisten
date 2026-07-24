@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Kind } from '@/types';
+import { Kind, Notfallkontakt } from '@/types';
 
 interface KindFormularProps {
   isOpen: boolean;
@@ -18,6 +18,17 @@ export default function KindFormular({ isOpen, onClose, onSave, kind, gruppen }:
   const [neueGruppe, setNeueGruppe] = useState('');
   const [isNeueGruppeSelected, setIsNeueGruppeSelected] = useState(false);
   const [besonderheiten, setBesonderheiten] = useState('');
+  
+  // 3 Password-protected emergency contacts
+  const [notfallkontakte, setNotfallkontakte] = useState<{ name: string; telefon: string }[]>([
+    { name: '', telefon: '' },
+    { name: '', telefon: '' },
+    { name: '', telefon: '' }
+  ]);
+  const [isUnlocked, setIsUnlocked] = useState(false);
+  const [pwInput, setPwInput] = useState('');
+  const [pwError, setPwError] = useState('');
+
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
   // Reset/populate form when dialog opens/closes or kind changes
@@ -28,13 +39,20 @@ export default function KindFormular({ isOpen, onClose, onSave, kind, gruppen }:
         setGeburtsdatum(kind.geburtsdatum);
         setBesonderheiten(kind.besonderheiten || '');
         
-        // If the group is already in existing groups list
+        // Populate emergency contacts
+        const existing = kind.notfallkontakte || [];
+        const populated = [
+          { name: existing[0]?.name || '', telefon: existing[0]?.telefon || '' },
+          { name: existing[1]?.name || '', telefon: existing[1]?.telefon || '' },
+          { name: existing[2]?.name || '', telefon: existing[2]?.telefon || '' },
+        ];
+        setNotfallkontakte(populated);
+        
         if (gruppen.includes(kind.gruppe)) {
           setGruppe(kind.gruppe);
           setIsNeueGruppeSelected(false);
           setNeueGruppe('');
         } else {
-          // If group is not in list (or empty list), treat as selected/prefilled
           setGruppe(kind.gruppe);
           setIsNeueGruppeSelected(false);
           setNeueGruppe('');
@@ -47,12 +65,37 @@ export default function KindFormular({ isOpen, onClose, onSave, kind, gruppen }:
         setNeueGruppe('');
         setIsNeueGruppeSelected(gruppen.length === 0);
         setBesonderheiten('');
+        setNotfallkontakte([
+          { name: '', telefon: '' },
+          { name: '', telefon: '' },
+          { name: '', telefon: '' }
+        ]);
       }
+      setPwInput('');
+      setPwError('');
       setErrors({});
     }
   }, [isOpen, kind, gruppen]);
 
   if (!isOpen) return null;
+
+  const handleUnlock = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (pwInput === '1248') {
+      setIsUnlocked(true);
+      setPwError('');
+    } else {
+      setPwError('Falsches Passwort! (Tipp: 1248)');
+    }
+  };
+
+  const handleContactChange = (index: number, field: 'name' | 'telefon', val: string) => {
+    setNotfallkontakte((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index], [field]: val };
+      return next;
+    });
+  };
 
   const handleGruppeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const val = e.target.value;
@@ -78,7 +121,6 @@ export default function KindFormular({ isOpen, onClose, onSave, kind, gruppen }:
     } else {
       const selectedDate = new Date(geburtsdatum);
       const today = new Date();
-      // Remove time portions for comparison
       today.setHours(0, 0, 0, 0);
       selectedDate.setHours(0, 0, 0, 0);
       
@@ -102,21 +144,30 @@ export default function KindFormular({ isOpen, onClose, onSave, kind, gruppen }:
 
     const finalGruppe = isNeueGruppeSelected ? neueGruppe.trim() : gruppe;
 
+    // Clean up empty emergency contacts
+    const validContacts: Notfallkontakt[] = notfallkontakte
+      .filter(c => c.telefon.trim() !== '')
+      .map(c => ({
+        name: c.name.trim() || undefined,
+        telefon: c.telefon.trim()
+      }));
+
     onSave({
       vorname: vorname.trim(),
       geburtsdatum,
       gruppe: finalGruppe,
       besonderheiten: besonderheiten.trim() || undefined,
-      letzteAktivitaetAm: kind?.letzteAktivitaetAm // Preserve activity date if editing
+      notfallkontakte: validContacts.length > 0 ? validContacts : undefined,
+      letzteAktivitaetAm: kind?.letzteAktivitaetAm
     });
   };
 
   return (
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 no-print animate-in fade-in duration-200">
-      <div className="bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-100 animate-in zoom-in-95 duration-200">
+      <div className="bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-100 animate-in zoom-in-95 duration-200 flex flex-col max-h-[92vh]">
         
         {/* Header */}
-        <div className="bg-[#4A90D9] p-6 text-white flex justify-between items-center">
+        <div className="bg-[#4A90D9] p-5 text-white flex justify-between items-center shrink-0">
           <h2 className="text-xl font-bold flex items-center gap-2">
             {kind ? '📝 Kind bearbeiten' : '➕ Kind hinzufügen'}
           </h2>
@@ -130,12 +181,12 @@ export default function KindFormular({ isOpen, onClose, onSave, kind, gruppen }:
         </div>
 
         {/* Body (Form) */}
-        <form onSubmit={handleSubmit}>
-          <div className="p-6 space-y-5">
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+          <div className="p-6 space-y-5 overflow-y-auto flex-1 text-sm">
             
             {/* Vorname */}
             <div className="space-y-1.5">
-              <label htmlFor="vorname" className="block text-sm font-bold text-slate-700">
+              <label htmlFor="vorname" className="block font-bold text-slate-700">
                 Vorname *
               </label>
               <input
@@ -143,20 +194,17 @@ export default function KindFormular({ isOpen, onClose, onSave, kind, gruppen }:
                 id="vorname"
                 value={vorname}
                 onChange={(e) => setVorname(e.target.value)}
-                placeholder="Vorname des Kindes"
-                className={`w-full p-3.5 bg-slate-50 border rounded-xl text-base md:text-lg focus:outline-none focus:ring-2 focus:ring-[#4A90D9]/50 transition ${
-                  errors.vorname ? 'border-rose-400 focus:ring-rose-200' : 'border-slate-200'
+                placeholder="z.B. Maya"
+                className={`w-full p-3 bg-slate-50 border rounded-2xl focus:outline-none focus:ring-2 transition ${
+                  errors.vorname ? 'border-rose-500 focus:ring-rose-500/30' : 'border-slate-200 focus:ring-[#4A90D9]/30'
                 }`}
-                autoComplete="off"
               />
-              {errors.vorname && (
-                <p className="text-rose-500 text-xs font-semibold">{errors.vorname}</p>
-              )}
+              {errors.vorname && <p className="text-xs text-rose-500 font-bold">{errors.vorname}</p>}
             </div>
 
             {/* Geburtsdatum */}
             <div className="space-y-1.5">
-              <label htmlFor="geburtsdatum" className="block text-sm font-bold text-slate-700">
+              <label htmlFor="geburtsdatum" className="block font-bold text-slate-700">
                 Geburtsdatum *
               </label>
               <input
@@ -164,100 +212,144 @@ export default function KindFormular({ isOpen, onClose, onSave, kind, gruppen }:
                 id="geburtsdatum"
                 value={geburtsdatum}
                 onChange={(e) => setGeburtsdatum(e.target.value)}
-                className={`w-full p-3.5 bg-slate-50 border rounded-xl text-base md:text-lg focus:outline-none focus:ring-2 focus:ring-[#4A90D9]/50 transition ${
-                  errors.geburtsdatum ? 'border-rose-400 focus:ring-rose-200' : 'border-slate-200'
+                className={`w-full p-3 bg-slate-50 border rounded-2xl focus:outline-none focus:ring-2 transition ${
+                  errors.geburtsdatum ? 'border-rose-500 focus:ring-rose-500/30' : 'border-slate-200 focus:ring-[#4A90D9]/30'
                 }`}
               />
-              {errors.geburtsdatum && (
-                <p className="text-rose-500 text-xs font-semibold">{errors.geburtsdatum}</p>
-              )}
+              {errors.geburtsdatum && <p className="text-xs text-rose-500 font-bold">{errors.geburtsdatum}</p>}
             </div>
 
             {/* Gruppe */}
             <div className="space-y-1.5">
-              <label htmlFor="gruppe" className="block text-sm font-bold text-slate-700">
+              <label htmlFor="gruppe" className="block font-bold text-slate-700">
                 Gruppe *
               </label>
               
-              {!isNeueGruppeSelected ? (
-                <select
-                  id="gruppe"
-                  value={gruppe}
-                  onChange={handleGruppeChange}
-                  className={`w-full p-3.5 bg-slate-50 border rounded-xl text-base md:text-lg focus:outline-none focus:ring-2 focus:ring-[#4A90D9]/50 transition ${
-                    errors.gruppe ? 'border-rose-400 focus:ring-rose-200' : 'border-slate-200'
-                  }`}
-                >
-                  {gruppen.map((g) => (
-                    <option key={g} value={g}>{g}</option>
-                  ))}
-                  <option value="__NEW__">+ Neue Gruppe anlegen...</option>
-                </select>
-              ) : (
-                <div className="space-y-2">
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      placeholder="Name der neuen Gruppe"
-                      value={neueGruppe}
-                      onChange={(e) => setNeueGruppe(e.target.value)}
-                      className={`flex-1 p-3.5 bg-slate-50 border rounded-xl text-base md:text-lg focus:outline-none focus:ring-2 focus:ring-[#4A90D9]/50 transition ${
-                        errors.gruppe ? 'border-rose-400 focus:ring-rose-200' : 'border-slate-200'
-                      }`}
-                      autoFocus
-                    />
-                    {gruppen.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsNeueGruppeSelected(false);
-                          setGruppe(gruppen[0]);
-                          setNeueGruppe('');
-                        }}
-                        className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-sm font-bold transition border border-slate-200"
-                      >
-                        Abbrechen
-                      </button>
-                    )}
-                  </div>
+              <select
+                id="gruppe"
+                value={isNeueGruppeSelected ? '__NEW__' : gruppe}
+                onChange={handleGruppeChange}
+                className={`w-full p-3 bg-slate-50 border rounded-2xl focus:outline-none focus:ring-2 transition ${
+                  errors.gruppe ? 'border-rose-500 focus:ring-rose-500/30' : 'border-slate-200 focus:ring-[#4A90D9]/30'
+                }`}
+              >
+                {gruppen.map((g) => (
+                  <option key={g} value={g}>
+                    {g}
+                  </option>
+                ))}
+                <option value="__NEW__">➕ Neue Gruppe anlegen...</option>
+              </select>
+
+              {isNeueGruppeSelected && (
+                <div className="pt-2">
+                  <input
+                    type="text"
+                    value={neueGruppe}
+                    onChange={(e) => setNeueGruppe(e.target.value)}
+                    placeholder="Name der neuen Gruppe eingeben..."
+                    className="w-full p-3 bg-white border border-[#4A90D9] rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#4A90D9]/30 font-semibold"
+                  />
                 </div>
               )}
-              {errors.gruppe && (
-                <p className="text-rose-500 text-xs font-semibold">{errors.gruppe}</p>
-              )}
+
+              {errors.gruppe && <p className="text-xs text-rose-500 font-bold">{errors.gruppe}</p>}
             </div>
 
-            {/* Besonderheiten (Allergien etc.) */}
+            {/* Besonderheiten */}
             <div className="space-y-1.5">
-              <label htmlFor="besonderheiten" className="block text-sm font-bold text-slate-700">
-                Besonderheiten / Allergien / Hinweise <span className="text-slate-400 font-normal">(optional)</span>
+              <label htmlFor="besonderheiten" className="block font-bold text-slate-700">
+                Besonderheiten / Allergien <span className="text-slate-400 font-normal">(optional)</span>
               </label>
               <textarea
                 id="besonderheiten"
+                rows={2}
                 value={besonderheiten}
                 onChange={(e) => setBesonderheiten(e.target.value)}
-                placeholder="z.B. Erdnussallergie, vegetarisch, Darf nur von Mutter abgeholt werden..."
-                rows={3}
-                className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-[#4A90D9]/50 transition resize-none"
+                placeholder="z.B. Nussallergie, Abholung nur durch Oma..."
+                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#4A90D9]/30 transition"
               />
+            </div>
+
+            {/* Password-protected Emergency Contacts (3 Numbers) */}
+            <div className="pt-3 border-t border-slate-100 space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="font-bold text-slate-800 flex items-center gap-1.5">
+                  <span>🔒 Notfallkontakte (3 Telefonnummern)</span>
+                </label>
+                {isUnlocked && (
+                  <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+                    🔓 Freigeschaltet
+                  </span>
+                )}
+              </div>
+
+              {!isUnlocked ? (
+                <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-2">
+                  <p className="text-xs text-amber-900 font-semibold">
+                    Notfallkontakte sind geschützt. Gib das Passwort ein, um die Telefonnummern zu sehen oder zu bearbeiten:
+                  </p>
+                  <div className="flex gap-2">
+                    <input
+                      type="password"
+                      placeholder="Passwort"
+                      value={pwInput}
+                      onChange={(e) => setPwInput(e.target.value)}
+                      className="p-2.5 bg-white border border-amber-300 rounded-xl text-xs font-bold w-36 focus:outline-none focus:ring-2 focus:ring-amber-500/30"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleUnlock}
+                      className="py-2.5 px-4 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-xs transition"
+                    >
+                      🔓 Freischalten
+                    </button>
+                  </div>
+                  {pwError && <p className="text-xs text-rose-600 font-bold">{pwError}</p>}
+                </div>
+              ) : (
+                <div className="space-y-2.5 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                  <p className="text-xs text-slate-500 font-semibold mb-1">
+                    Bis zu 3 Notfallnummern eintragen (z.B. Eltern/Großeltern):
+                  </p>
+                  {[0, 1, 2].map((idx) => (
+                    <div key={idx} className="grid grid-cols-5 gap-2 items-center">
+                      <input
+                        type="text"
+                        placeholder={`Kontakt ${idx + 1} (z.B. ${idx === 0 ? 'Mama' : idx === 1 ? 'Papa' : 'Oma'})`}
+                        value={notfallkontakte[idx]?.name || ''}
+                        onChange={(e) => handleContactChange(idx, 'name', e.target.value)}
+                        className="col-span-2 p-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#4A90D9]/30"
+                      />
+                      <input
+                        type="tel"
+                        placeholder="Telefonnummer"
+                        value={notfallkontakte[idx]?.telefon || ''}
+                        onChange={(e) => handleContactChange(idx, 'telefon', e.target.value)}
+                        className="col-span-3 p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#4A90D9]/30"
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
           </div>
 
-          {/* Footer */}
-          <div className="bg-slate-50 p-5 border-t border-slate-100 flex justify-end gap-3">
+          {/* Footer Actions */}
+          <div className="bg-slate-50 p-4 border-t border-slate-100 flex justify-end gap-3 shrink-0">
             <button
               type="button"
               onClick={onClose}
-              className="py-3 px-5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition text-base md:text-sm focus:outline-none"
+              className="py-3 px-5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-2xl transition text-sm focus:outline-none"
             >
               Abbrechen
             </button>
             <button
               type="submit"
-              className="py-3 px-6 bg-[#4A90D9] hover:bg-[#357ABD] text-white font-bold rounded-xl shadow-sm transition text-base md:text-sm focus:outline-none"
+              className="py-3 px-6 bg-[#4A90D9] hover:bg-[#357ABD] text-white font-extrabold rounded-2xl shadow-md transition text-sm focus:outline-none"
             >
-              Speichern
+              {kind ? 'Änderungen speichern' : 'Kind hinzufügen'}
             </button>
           </div>
         </form>

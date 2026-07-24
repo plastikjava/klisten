@@ -1,5 +1,5 @@
 import { db } from './db';
-import { Kind, Listenvorlage, AktivitaetsLog } from '@/types';
+import { Kind, Listenvorlage, AktivitaetsLog, AnwesenheitsEintrag, AnwesenheitsStatus } from '@/types';
 
 /**
  * Loads all active (non-deleted) kids from the local IndexedDB.
@@ -231,6 +231,46 @@ export async function letzteAktivitaetProKindFuerAlleVorlagen(): Promise<Map<str
     return resultMap;
   } catch (error) {
     console.error('Fehler beim Laden der Historie aller Vorlagen:', error);
+    console.error('Fehler beim Abrufen der Aktivitätshistorie:', error);
+    return new Map();
+  }
+}
+
+/**
+ * Saves attendance status for a child on a given date.
+ */
+export async function anwesenheitSetzen(
+  kindId: string,
+  datum: string,
+  status: AnwesenheitsStatus,
+  notiz?: string
+): Promise<void> {
+  try {
+    const id = `${datum}_${kindId}`;
+    const eintrag: AnwesenheitsEintrag = {
+      id,
+      kindId,
+      datum,
+      status,
+      notiz,
+      geaendertAm: new Date().toISOString()
+    };
+    await db.anwesenheit.put(eintrag);
+  } catch (error) {
+    console.error('Fehler beim Speichern der Anwesenheit:', error);
+    throw new Error('Fehler beim Speichern der Anwesenheit.');
+  }
+}
+
+/**
+ * Loads attendance records for a specific YYYY-MM-DD date into a Map.
+ */
+export async function anwesenheitLadenFuerDatum(datum: string): Promise<Map<string, AnwesenheitsEintrag>> {
+  try {
+    const eintraege = await db.anwesenheit.where('datum').equals(datum).toArray();
+    return new Map(eintraege.map(e => [e.kindId, e]));
+  } catch (error) {
+    console.error('Fehler beim Laden der Anwesenheit:', error);
     return new Map();
   }
 }
@@ -242,10 +282,11 @@ export async function letzteAktivitaetProKindFuerAlleVorlagen(): Promise<Map<str
 export async function datenZusammenfuehren(
   importKinder: Kind[],
   importVorlagen: Listenvorlage[],
-  importLogs: AktivitaetsLog[]
+  importLogs: AktivitaetsLog[],
+  importAnwesenheit: AnwesenheitsEintrag[] = []
 ): Promise<void> {
   try {
-    await db.transaction('rw', [db.kinder, db.vorlagen, db.aktivitaetsLog], async () => {
+    await db.transaction('rw', [db.kinder, db.vorlagen, db.aktivitaetsLog, db.anwesenheit], async () => {
       // 1. Merge Kinder
       const localKinder = await db.kinder.toArray();
       const localKinderMap = new Map(localKinder.map(k => [k.id, k]));
@@ -311,6 +352,25 @@ export async function datenZusammenfuehren(
           await db.aktivitaetsLog.add(impLog);
         }
       }
+
+      // 4. Merge Anwesenheit
+      if (importAnwesenheit.length > 0) {
+        const localAnwesenheit = await db.anwesenheit.toArray();
+        const localAnwesenheitMap = new Map(localAnwesenheit.map(a => [a.id, a]));
+
+        for (const impAnw of importAnwesenheit) {
+          const local = localAnwesenheitMap.get(impAnw.id);
+          const impTime = impAnw.geaendertAm || '1970-01-01T00:00:00.000Z';
+          if (!local) {
+            await db.anwesenheit.add(impAnw);
+          } else {
+            const localTime = local.geaendertAm || '1970-01-01T00:00:00.000Z';
+            if (impTime >= localTime) {
+              await db.anwesenheit.put(impAnw);
+            }
+          }
+        }
+      }
     });
   } catch (error) {
     console.error('Fehler beim Zusammenführen der Daten:', error);
@@ -324,17 +384,20 @@ export async function datenZusammenfuehren(
 export async function datenUeberschreiben(
   importKinder: Kind[],
   importVorlagen: Listenvorlage[],
-  importLogs: AktivitaetsLog[]
+  importLogs: AktivitaetsLog[],
+  importAnwesenheit: AnwesenheitsEintrag[] = []
 ): Promise<void> {
   try {
-    await db.transaction('rw', [db.kinder, db.vorlagen, db.aktivitaetsLog], async () => {
+    await db.transaction('rw', [db.kinder, db.vorlagen, db.aktivitaetsLog, db.anwesenheit], async () => {
       await db.kinder.clear();
       await db.vorlagen.clear();
       await db.aktivitaetsLog.clear();
+      await db.anwesenheit.clear();
 
       if (importKinder.length > 0) await db.kinder.bulkAdd(importKinder);
       if (importVorlagen.length > 0) await db.vorlagen.bulkAdd(importVorlagen);
       if (importLogs.length > 0) await db.aktivitaetsLog.bulkAdd(importLogs);
+      if (importAnwesenheit.length > 0) await db.anwesenheit.bulkAdd(importAnwesenheit);
     });
   } catch (error) {
     console.error('Fehler beim Überschreiben der lokalen Daten:', error);
@@ -343,21 +406,23 @@ export async function datenUeberschreiben(
 }
 
 /**
- * Exports all database records (kinder, vorlagen, logs) to a JSON string.
+ * Exports all database records (kinder, vorlagen, logs, anwesenheit) to a JSON string.
  */
 export async function datenExportieren(): Promise<string> {
   try {
     const kinder = await db.kinder.toArray();
     const vorlagen = await db.vorlagen.toArray();
     const aktivitaetsLog = await db.aktivitaetsLog.toArray();
+    const anwesenheit = await db.anwesenheit.toArray();
     
     return JSON.stringify({
-      version: 2,
+      version: 3,
       source: 'Kita-Listen-App',
       exportedAt: new Date().toISOString(),
       kinder,
       vorlagen,
-      aktivitaetsLog
+      aktivitaetsLog,
+      anwesenheit
     }, null, 2);
   } catch (error) {
     console.error('Fehler beim Exportieren der Daten:', error);
